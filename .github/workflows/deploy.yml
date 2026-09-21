@@ -37,7 +37,7 @@ jobs:
           # bucket once OwnershipControls: BucketOwnerEnforced is set,
           # even though a fresh create works fine without it. See the
           # comment on CloudFrontBucket's AccessControl property.
-          cfn-lint --ignore-checks W3045 s3-static-website.yaml
+          cfn-lint s3-static-website.yaml --ignore-checks W3045
 
       - name: Preview S3 sync (dry run)
         run: |
