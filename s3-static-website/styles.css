@@ -103,6 +103,10 @@ body {
     position: relative;
     padding: 4px;
     border-radius: 2px;
+    background: none;
+    border: none;
+    font: inherit;
+    color: inherit;
 }
 
 .cart:hover {

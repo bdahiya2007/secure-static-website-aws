@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Shopme - shop electronics, clothing, books, home goods, and sports gear at great prices.">
     <title>Shopme - Online Shopping</title>
+    <link rel="preconnect" href="https://images.unsplash.com">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -25,10 +27,11 @@
                     <option value="clothing">Clothing</option>
                     <option value="books">Books</option>
                     <option value="home">Home & Garden</option>
+                    <option value="sports">Sports</option>
                 </select>
-                <input type="text" class="search-input" placeholder="Search Shopme" id="searchInput">
-                <button class="search-btn" onclick="searchProducts()">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <input type="text" class="search-input" placeholder="Search Shopme" id="searchInput" aria-label="Search Shopme">
+                <button class="search-btn" onclick="searchProducts()" aria-label="Search">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path d="M21 21L16.514 16.506L21 21ZM19 10.5C19 15.194 15.194 19 10.5 19C5.806 19 2 15.194 2 10.5C2 5.806 5.806 2 10.5 2C15.194 2 19 5.806 19 10.5Z" stroke="currentColor" stroke-width="2"/>
                     </svg>
                 </button>
@@ -44,13 +47,13 @@
                     <span>Returns</span>
                     <strong>& Orders</strong>
                 </div>
-                <div class="cart" onclick="toggleCart()">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <button class="cart" onclick="toggleCart()" aria-label="View cart">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path d="M3 3H5L5.4 5M7 13H17L21 5H5.4M7 13L5.4 5M7 13L4.7 15.3C4.3 15.7 4.6 16.5 5.1 16.5H17M17 13V17C17 18.1 16.1 19 15 19H9C7.9 19 7 18.1 7 17V13H17Z" stroke="currentColor" stroke-width="2"/>
                     </svg>
                     <span class="cart-count" id="cartCount">0</span>
                     <span>Cart</span>
-                </div>
+                </button>
             </div>
         </div>
     </header>
@@ -94,7 +97,7 @@
     <div class="cart-sidebar" id="cartSidebar">
         <div class="cart-header">
             <h3>Shopping Cart</h3>
-            <button class="close-cart" onclick="toggleCart()">×</button>
+            <button class="close-cart" onclick="toggleCart()" aria-label="Close cart">×</button>
         </div>
         <div class="cart-items" id="cartItems">
             <!-- Cart items will be displayed here -->

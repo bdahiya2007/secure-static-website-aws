@@ -120,6 +120,30 @@ let currentProducts = [...products];
 document.addEventListener('DOMContentLoaded', function() {
     displayProducts(products);
     updateCartCount();
+
+    // Handle search on Enter key
+    document.getElementById('searchInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            searchProducts();
+        }
+    });
+
+    // Close cart when clicking outside
+    document.addEventListener('click', function(e) {
+        const cartSidebar = document.getElementById('cartSidebar');
+        const cartButton = document.querySelector('.cart');
+
+        if (!cartSidebar.contains(e.target) && !cartButton.contains(e.target) && cartSidebar.classList.contains('open')) {
+            toggleCart();
+        }
+    });
+
+    // Close cart on Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && document.getElementById('cartSidebar').classList.contains('open')) {
+            toggleCart();
+        }
+    });
 });
 
 // Display products in the grid
@@ -149,8 +173,12 @@ function displayProducts(productsToShow) {
 
 // Generate star rating display
 function generateStars(rating) {
-    const fullStars = Math.floor(rating);
-    const hasHalfStar = rating % 1 !== 0;
+    // Round to the nearest half star first, so e.g. 4.2 -> 4 full stars
+    // (no half) and 4.8 -> 5 full stars, instead of every non-integer
+    // rating showing an identical "4 full + half" display.
+    const rounded = Math.round(rating * 2) / 2;
+    const fullStars = Math.floor(rounded);
+    const hasHalfStar = rounded % 1 !== 0;
     let stars = '';
     
     for (let i = 0; i < fullStars; i++) {
@@ -225,8 +253,12 @@ function filterProducts(category) {
 // Add product to cart
 function addToCart(productId) {
     const product = products.find(p => p.id === productId);
+    if (!product) {
+        return;
+    }
+
     const existingItem = cart.find(item => item.id === productId);
-    
+
     if (existingItem) {
         existingItem.quantity += 1;
     } else {
@@ -347,19 +379,3 @@ function checkout() {
     toggleCart();
 }
 
-// Handle search on Enter key
-document.getElementById('searchInput').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') {
-        searchProducts();
-    }
-});
-
-// Close cart when clicking outside
-document.addEventListener('click', function(e) {
-    const cartSidebar = document.getElementById('cartSidebar');
-    const cartButton = document.querySelector('.cart');
-    
-    if (!cartSidebar.contains(e.target) && !cartButton.contains(e.target) && cartSidebar.classList.contains('open')) {
-        toggleCart();
-    }
-});
