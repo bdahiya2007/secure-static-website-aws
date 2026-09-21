@@ -292,7 +292,13 @@ Resources:
               StringEquals:
                 'token.actions.githubusercontent.com:aud': sts.amazonaws.com
               StringLike:
-                'token.actions.githubusercontent.com:sub': !Sub 'repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/${GitHubBranch}'
+                'token.actions.githubusercontent.com:sub':
+                  # push to GitHubBranch (the deploy job) and pull_request
+                  # events targeting main (the validate job) each get a
+                  # differently-shaped 'sub' claim from GitHub's OIDC
+                  # provider, so both patterns need to be allowed here.
+                  - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/${GitHubBranch}'
+                  - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:pull_request'
       Policies:
         - PolicyName: DeployWebsiteToS3AndInvalidateCloudFront
           PolicyDocument:
