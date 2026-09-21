@@ -19,7 +19,8 @@ A production-style static website hosting architecture on AWS, built to demonstr
 
 ```mermaid
 flowchart LR
-    Visitor -->|HTTPS| CloudFront[CloudFront Distribution]
+    Visitor -->|DNS lookup| Route53[Route53<br/>external, not IaC-managed]
+    Route53 -->|HTTPS| CloudFront[CloudFront Distribution]
     CloudFront -->|WAF inspects request| WAF[AWS WAF<br/>SQLi Managed Rules]
     CloudFront -->|OAC signed request| S3[(Private S3 Bucket<br/>all public access blocked)]
     CloudFront --> CW[CloudWatch Dashboard<br/>CloudFront + S3 metrics]
@@ -47,6 +48,7 @@ flowchart LR
 | Least-privilege deploy role | The IAM policy grants only `s3:{List,Get,Put,Delete}Object` on this one bucket and `cloudfront:CreateInvalidation` on this one distribution |
 | Branch protection on `main` | Every change goes through a PR with a required, automated validation check; direct pushes and force-pushes are blocked |
 | Custom domain is optional, not hardcoded | `Aliases`/`ViewerCertificate` are driven by parameters (`AlternateDomainNames`, `AcmCertificateArn`), gated by a condition — deploying without them still works, falling back to the default `*.cloudfront.net` certificate |
+| DNS (Route53) is deliberately left out of this stack | The hosted zone for the demo domain has unrelated records (NS/SOA, an ACM validation CNAME) alongside the two alias records that point here; importing it into CloudFormation risks a conflicting-resource error on deploy. The two alias records pointing at CloudFront are managed manually instead |
 
 ## Repository structure
 
@@ -102,4 +104,4 @@ aws s3 sync ./s3-static-website s3://<your-bucket-name>/
 
 ## Tech stack
 
-AWS CloudFormation · Amazon S3 · Amazon CloudFront (OAC) · AWS WAFv2 · AWS IAM (OIDC federation) · Amazon CloudWatch · Terraform (alternate path) · GitHub Actions
+AWS CloudFormation · Amazon S3 · Amazon CloudFront (OAC) · AWS WAFv2 · AWS IAM (OIDC federation) · Amazon CloudWatch · Amazon Route53 (DNS, managed separately from this stack) · Terraform (alternate path) · GitHub Actions
