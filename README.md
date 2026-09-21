@@ -4,7 +4,7 @@
 
 A production-style static website hosting architecture on AWS, built to demonstrate cloud architecture and cloud security engineering practices — a private-by-default origin, defense-in-depth at the edge, and a CI/CD pipeline with **zero long-lived AWS credentials**.
 
-**Live demo:** https://d3ub11m74qhwfr.cloudfront.net
+**Live demo:** https://securecloudengineers.com (served over a custom domain + ACM certificate, via CloudFront)
 
 ## What this demonstrates
 
@@ -46,6 +46,7 @@ flowchart LR
 | GitHub OIDC instead of IAM access keys | The deploy role is assumed via a short-lived token scoped to this exact repository (matched against GitHub's OIDC `sub` claim) — no long-lived AWS credentials stored in GitHub, nothing to leak or rotate |
 | Least-privilege deploy role | The IAM policy grants only `s3:{List,Get,Put,Delete}Object` on this one bucket and `cloudfront:CreateInvalidation` on this one distribution |
 | Branch protection on `main` | Every change goes through a PR with a required, automated validation check; direct pushes and force-pushes are blocked |
+| Custom domain is optional, not hardcoded | `Aliases`/`ViewerCertificate` are driven by parameters (`AlternateDomainNames`, `AcmCertificateArn`), gated by a condition — deploying without them still works, falling back to the default `*.cloudfront.net` certificate |
 
 ## Repository structure
 
