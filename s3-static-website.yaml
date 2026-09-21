@@ -71,11 +71,39 @@ Parameters:
       this account (from another stack/repo) and this stack will just add
       a role that trusts it.
 
+  AlternateDomainNames:
+    Type: CommaDelimitedList
+    Default: ''
+    Description: >
+      Custom domain name(s) to serve the site from as CloudFront
+      Aliases, e.g. "example.com,www.example.com". Leave blank to use
+      only the default *.cloudfront.net domain. Requires
+      AcmCertificateArn to also be set; the ACM certificate must cover
+      every name listed here.
+
+  AcmCertificateArn:
+    Type: String
+    Default: ''
+    Description: >
+      ARN of an ACM certificate, in us-east-1, validated for the
+      domain(s) in AlternateDomainNames. Leave blank to use
+      CloudFront's default certificate and *.cloudfront.net domain
+      only.
+
+  MinimumProtocolVersion:
+    Type: String
+    Default: TLSv1.2_2021
+    Description: >
+      Minimum TLS protocol version CloudFront accepts from viewers.
+      Only applies when AcmCertificateArn is set — the default
+      certificate always uses CloudFront's own minimum.
+
 Conditions:
   ShouldCreateGitHubDeployRole: !And
     - !Not [!Equals [!Ref GitHubOrg, '']]
     - !Not [!Equals [!Ref GitHubRepo, '']]
   ShouldCreateOIDCProvider: !Equals [!Ref CreateGitHubOIDCProvider, 'true']
+  HasCustomDomain: !Not [!Equals [!Ref AcmCertificateArn, '']]
 
 Resources:
 
@@ -83,6 +111,15 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Ref BucketName
+      # cfn-lint flags this as redundant (W3045) since
+      # OwnershipControls: BucketOwnerEnforced below already disables
+      # ACLs entirely - but removing it breaks CloudFormation *updates*
+      # on an existing bucket: on update, CloudFormation still issues a
+      # PutBucketAcl call to reconcile the now-unspecified property,
+      # which S3 rejects outright once ACLs are disabled ("The bucket
+      # does not allow ACLs"). Keep it; the lint rule is suppressed for
+      # this resource in the CI validate job instead.
+      AccessControl: Private
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -178,6 +215,13 @@ Resources:
         HttpVersion: http2and3
         IPV6Enabled: true
         WebACLId: !GetAtt CloudFrontWebACL.Arn
+        Aliases: !If [HasCustomDomain, !Ref AlternateDomainNames, !Ref 'AWS::NoValue']
+        ViewerCertificate: !If
+          - HasCustomDomain
+          - AcmCertificateArn: !Ref AcmCertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: !Ref MinimumProtocolVersion
+          - CloudFrontDefaultCertificate: true
         Origins:
           - Id: S3CloudFrontOrigin
             # Uses the bucket's REST (regional) domain name, not the S3
@@ -358,6 +402,13 @@ Outputs:
   CloudFrontURL:
     Description: Public URL for the website via CloudFront
     Value: !Sub 'https://${CloudFrontDistribution.DomainName}'
+
+  CustomDomainAliases:
+    Condition: HasCustomDomain
+    Description: >
+      Custom domain(s) serving the site (CloudFront Aliases). Point a
+      DNS alias/CNAME record at CloudFrontDomainName for each one.
+    Value: !Join [', ', !Ref AlternateDomainNames]
 
   WebACLArn:
     Description: ARN of the WAF web ACL protecting the CloudFront distribution
