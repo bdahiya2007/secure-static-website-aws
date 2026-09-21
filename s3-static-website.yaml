@@ -111,6 +111,15 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Ref BucketName
+      # cfn-lint flags this as redundant (W3045) since
+      # OwnershipControls: BucketOwnerEnforced below already disables
+      # ACLs entirely - but removing it breaks CloudFormation *updates*
+      # on an existing bucket: on update, CloudFormation still issues a
+      # PutBucketAcl call to reconcile the now-unspecified property,
+      # which S3 rejects outright once ACLs are disabled ("The bucket
+      # does not allow ACLs"). Keep it; the lint rule is suppressed for
+      # this resource in the CI validate job instead.
+      AccessControl: Private
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true

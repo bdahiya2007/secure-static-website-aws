@@ -32,7 +32,12 @@ jobs:
       - name: Lint CloudFormation template
         run: |
           pip install --quiet cfn-lint
-          cfn-lint s3-static-website.yaml
+          # W3045 (redundant AccessControl) is intentionally suppressed:
+          # removing it breaks `cloudformation deploy` updates on this
+          # bucket once OwnershipControls: BucketOwnerEnforced is set,
+          # even though a fresh create works fine without it. See the
+          # comment on CloudFrontBucket's AccessControl property.
+          cfn-lint --ignore-checks W3045 s3-static-website.yaml
 
       - name: Preview S3 sync (dry run)
         run: |
