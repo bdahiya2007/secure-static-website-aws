@@ -4,17 +4,20 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
-
-# Prevent two pushes from racing to sync/invalidate at the same time.
-concurrency:
-  group: deploy-website
-  cancel-in-progress: false
+  id-token: write
 
 jobs:
-  deploy:
+  # Runs on PRs only. Validates the CloudFormation template and previews
+  # the S3 sync without changing anything, so it can be used as a required
+  # status check before merging.
+  validate:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -23,8 +26,37 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Lint CloudFormation template
+        run: |
+          pip install --quiet cfn-lint
+          cfn-lint s3-static-website.yaml
+
+      - name: Preview S3 sync (dry run)
+        run: |
+          aws s3 sync ./s3-static-website "s3://${{ vars.S3_BUCKET_NAME }}/" --delete --dryrun
+
+  # Runs only after a push lands on main (i.e. after a PR merges).
+  deploy:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # Prevent two pushes from racing to sync/invalidate at the same time.
+    concurrency:
+      group: deploy-website
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Assumes GitHubActionsDeployRole via OIDC — no long-lived AWS
+      # credentials are stored in GitHub. The role's trust policy only
+      # allows this repo's main branch to assume it.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       # --delete keeps the bucket an exact mirror of ./s3-static-website,
