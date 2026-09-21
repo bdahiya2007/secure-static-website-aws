@@ -295,10 +295,16 @@ Resources:
                 'token.actions.githubusercontent.com:sub':
                   # push to GitHubBranch (the deploy job) and pull_request
                   # events targeting main (the validate job) each get a
-                  # differently-shaped 'sub' claim from GitHub's OIDC
-                  # provider, so both patterns need to be allowed here.
+                  # differently-shaped 'sub' claim, and GitHub now embeds
+                  # immutable owner/repo IDs in it too (e.g.
+                  # "repo:org@123/repo@456:pull_request" instead of plain
+                  # "repo:org/repo:pull_request"). The '@*' wildcards match
+                  # either form so this keeps working if that ID-inclusion
+                  # setting ever changes.
                   - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/${GitHubBranch}'
+                  - !Sub 'repo:${GitHubOrg}@*/${GitHubRepo}@*:ref:refs/heads/${GitHubBranch}'
                   - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:pull_request'
+                  - !Sub 'repo:${GitHubOrg}@*/${GitHubRepo}@*:pull_request'
       Policies:
         - PolicyName: DeployWebsiteToS3AndInvalidateCloudFront
           PolicyDocument:
