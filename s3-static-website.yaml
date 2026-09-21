@@ -1,0 +1,258 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Creates an S3 bucket configured for static website hosting, fronted by a
+  CloudFront distribution using Origin Access Control (OAC), protected by
+  an AWS WAF web ACL with the AWS managed SQL injection rule set. The
+  bucket itself blocks all public access; content is only reachable
+  through CloudFront. NOTE: because the WAF web ACL is scoped to
+  CloudFront, this stack must be deployed in the us-east-1 (N. Virginia)
+  region — that is an AWS WAF requirement for CloudFront-scoped web ACLs,
+  regardless of which region your users or other resources are in.
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: >
+      Globally unique name for the S3 bucket (must be lowercase, no
+      underscores, and follow S3 bucket naming rules).
+    AllowedPattern: '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'
+    ConstraintDescription: >
+      Must be a valid S3 bucket name: lowercase letters, numbers, dots,
+      and hyphens only, 3-63 characters.
+
+  IndexDocument:
+    Type: String
+    Default: index.html
+    Description: The file to serve as the website's home page.
+
+  ErrorDocument:
+    Type: String
+    Default: error.html
+    Description: The file to serve when a request results in an error (e.g. 404).
+
+  PriceClass:
+    Type: String
+    Default: PriceClass_100
+    AllowedValues:
+      - PriceClass_100
+      - PriceClass_200
+      - PriceClass_All
+    Description: CloudFront price class (controls which edge locations are used).
+
+Resources:
+
+  CloudFrontBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      WebsiteConfiguration:
+        IndexDocument: !Ref IndexDocument
+        ErrorDocument: !Ref ErrorDocument
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      # Enables the AWS/S3 per-request metrics (AllRequests, GetRequests,
+      # etc.) for the whole bucket, published under FilterId "EntireBucket".
+      # These aren't published to CloudWatch by default and carry their own
+      # per-metric charge - see the dashboard below.
+      MetricsConfigurations:
+        - Id: EntireBucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+
+  # Bucket policy grants access only to this specific CloudFront distribution,
+  # via Origin Access Control (SigV4-signed requests to the S3 REST endpoint).
+  CloudFrontBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CloudFrontBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: 's3:GetObject'
+            Resource: !Sub '${CloudFrontBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                'AWS:SourceArn': !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${BucketName}-oac'
+        Description: OAC for CloudFront to access the S3 static website bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # AWS WAF web ACL using the AWS managed SQL injection rule set.
+  # Scope: CLOUDFRONT web ACLs are global but must be created in the
+  # us-east-1 region — this stack must be deployed there.
+  #
+  # WAF's Name/MetricName fields only allow word characters and hyphens
+  # (no dots), but BucketName may contain dots (e.g. a domain name like
+  # "example.com"), so dots are swapped for hyphens here before use.
+  CloudFrontWebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub
+        - '${SanitizedName}-waf'
+        - SanitizedName: !Join ['-', !Split ['.', !Ref BucketName]]
+      Scope: CLOUDFRONT
+      Description: !Sub 'Web ACL for ${BucketName} CloudFront distribution - SQL injection protection'
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub '${BucketName}-webacl'
+      Rules:
+        - Name: AWS-AWSManagedRulesSQLiRuleSet
+          Priority: 0
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesSQLiRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub '${BucketName}-sqli-rule-set'
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub 'CDN for ${BucketName} static website'
+        DefaultRootObject: !Ref IndexDocument
+        PriceClass: !Ref PriceClass
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        WebACLId: !GetAtt CloudFrontWebACL.Arn
+        Origins:
+          - Id: S3CloudFrontOrigin
+            # Uses the bucket's REST (regional) domain name, not the S3
+            # website endpoint — OAC/SigV4 is only supported against the
+            # REST endpoint. S3OriginConfig + OriginAccessControlId is what
+            # tells CloudFront to sign requests with OAC.
+            DomainName: !GetAtt CloudFrontBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
+        DefaultCacheBehavior:
+          TargetOriginId: S3CloudFrontOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # AWS Managed-CachingOptimized
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 404
+            ResponsePagePath: !Sub '/${ErrorDocument}'
+          - ErrorCode: 404
+            ResponseCode: 404
+            ResponsePagePath: !Sub '/${ErrorDocument}'
+
+  # CloudWatch dashboard showing request volume from both the CDN layer
+  # (CloudFront) and the origin layer (S3), so a spike in one relative to
+  # the other is visible (e.g. cache misses driving up origin load).
+  CloudWatchDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub
+        - '${SanitizedName}-dashboard'
+        - SanitizedName: !Join ['-', !Split ['.', !Ref BucketName]]
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "CloudFront Requests",
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-1",
+                "stat": "Sum",
+                "period": 300,
+                "metrics": [
+                  [ "AWS/CloudFront", "Requests", "DistributionId", "${CloudFrontDistribution}", "Region", "Global" ]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "S3 AllRequests",
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "stat": "Sum",
+                "period": 300,
+                "metrics": [
+                  [ "AWS/S3", "AllRequests", "BucketName", "${BucketName}", "FilterId", "EntireBucket" ]
+                ]
+              }
+            }
+          ]
+        }
+
+Outputs:
+  BucketName:
+    Description: Name of the S3 bucket hosting the website
+    Value: !Ref CloudFrontBucket
+
+  S3WebsiteEndpointURL:
+    Description: >
+      Direct S3 website endpoint URL (kept for reference only — this
+      endpoint is not publicly accessible since the bucket blocks public
+      access; use CloudFrontURL instead).
+    Value: !GetAtt CloudFrontBucket.WebsiteURL
+
+  BucketDomainName:
+    Description: Regional S3 domain name of the bucket (CloudFront origin)
+    Value: !GetAtt CloudFrontBucket.RegionalDomainName
+
+  BucketArn:
+    Description: ARN of the S3 bucket
+    Value: !GetAtt CloudFrontBucket.Arn
+
+  CloudFrontDistributionId:
+    Description: ID of the CloudFront distribution
+    Value: !Ref CloudFrontDistribution
+
+  CloudFrontDomainName:
+    Description: CloudFront distribution domain name
+    Value: !GetAtt CloudFrontDistribution.DomainName
+
+  CloudFrontURL:
+    Description: Public URL for the website via CloudFront
+    Value: !Sub 'https://${CloudFrontDistribution.DomainName}'
+
+  WebACLArn:
+    Description: ARN of the WAF web ACL protecting the CloudFront distribution
+    Value: !GetAtt CloudFrontWebACL.Arn
+
+  DashboardURL:
+    Description: >
+      Console URL for the CloudWatch dashboard showing CloudFront and S3
+      request metrics.
+    Value: !Sub 'https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=${CloudWatchDashboard}'

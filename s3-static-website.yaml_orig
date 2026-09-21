@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Creates an S3 bucket configured for static website hosting, with a
+  bucket policy that allows public read access to the website content.
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: >
+      Globally unique name for the S3 bucket (must be lowercase, no
+      underscores, and follow S3 bucket naming rules).
+    AllowedPattern: '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'
+    ConstraintDescription: >
+      Must be a valid S3 bucket name: lowercase letters, numbers, dots,
+      and hyphens only, 3-63 characters.
+
+  IndexDocument:
+    Type: String
+    Default: index.html
+    Description: The file to serve as the website's home page.
+
+  ErrorDocument:
+    Type: String
+    Default: error.html
+    Description: The file to serve when a request results in an error (e.g. 404).
+
+Resources:
+
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      WebsiteConfiguration:
+        IndexDocument: !Ref IndexDocument
+        ErrorDocument: !Ref ErrorDocument
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub '${WebsiteBucket.Arn}/*'
+
+Outputs:
+  BucketName:
+    Description: Name of the S3 bucket hosting the website
+    Value: !Ref WebsiteBucket
+
+  WebsiteURL:
+    Description: URL of the S3 static website
+    Value: !GetAtt WebsiteBucket.WebsiteURL
+
+  BucketDomainName:
+    Description: Regional S3 domain name of the bucket
+    Value: !GetAtt WebsiteBucket.RegionalDomainName
+
+  BucketArn:
+    Description: ARN of the S3 bucket
+    Value: !GetAtt WebsiteBucket.Arn

@@ -1,0 +1,12 @@
+# Terraform state and local working files
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/terraform.tfstate.*.backup
+terraform/crash.log
+terraform/crash.*.log
+terraform/*.tfplan
+terraform/terraform.tfvars
+
+# OS cruft
+.DS_Store

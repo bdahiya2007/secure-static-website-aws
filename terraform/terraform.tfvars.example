@@ -1,0 +1,3 @@
+bucket_name = "my-unique-website-bucket-name-12345"
+aws_region  = "us-east-1"
+environment = "prod"
