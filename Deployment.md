@@ -279,11 +279,20 @@ aws cloudformation wait stack-delete-complete --stack-name my-static-site --regi
   serves the site over HTTPS out of the box, with HTTP requests redirected
   to HTTPS.
 - **Custom domain**: to serve the site from your own domain (e.g.
-  `www.example.com`) instead of the `*.cloudfront.net` URL, request or
-  import a certificate in **ACM** (in `us-east-1`, which CloudFront
-  requires), then add it plus your domain to the distribution's
-  `Aliases`/`ViewerCertificate` configuration and point a DNS record at the
-  CloudFront domain name.
+  `www.example.com`) instead of the `*.cloudfront.net` URL:
+  1. Request or import a certificate for the domain in **ACM**, in
+     `us-east-1` (required for CloudFront regardless of where your other
+     resources live), and validate it.
+  2. Redeploy this stack with `AlternateDomainNames` and
+     `AcmCertificateArn` set, e.g.:
+     ```bash
+     --parameter-overrides \
+         AlternateDomainNames=example.com,www.example.com \
+         AcmCertificateArn=arn:aws:acm:us-east-1:123456789012:certificate/abc-123
+     ```
+  3. Point a DNS alias/CNAME record at the stack's
+     `CloudFrontDomainName` output for each domain in
+     `AlternateDomainNames`.
 - **Access logging**: consider enabling CloudFront access logs (to a
   separate S3 bucket) and/or S3 server access logging if you need
   visibility into who's accessing the site.
