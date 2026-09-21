@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 # Prevent two pushes from racing to sync/invalidate at the same time.
 concurrency:
@@ -20,11 +21,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Assumes GitHubActionsDeployRole via OIDC — no long-lived AWS
+      # credentials are stored in GitHub. The role's trust policy only
+      # allows this repo's main branch to assume it.
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
       # --delete keeps the bucket an exact mirror of ./s3-static-website,

@@ -39,6 +39,44 @@ Parameters:
       - PriceClass_All
     Description: CloudFront price class (controls which edge locations are used).
 
+  GitHubOrg:
+    Type: String
+    Default: ''
+    Description: >
+      GitHub org or username that owns the deployment repo (e.g. "bdahiya2007").
+      Leave blank to skip creating the GitHub Actions deploy role.
+
+  GitHubRepo:
+    Type: String
+    Default: ''
+    Description: >
+      GitHub repo name, without the org (e.g. "secure-static-website-aws").
+      Leave blank to skip creating the GitHub Actions deploy role.
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: >
+      Branch allowed to assume the deploy role via OIDC (matches the
+      workflow's trigger branch).
+
+  CreateGitHubOIDCProvider:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: >
+      Whether to create the token.actions.githubusercontent.com IAM OIDC
+      provider. An AWS account can only have one provider per URL, so set
+      this to 'false' if a GitHub Actions OIDC provider already exists in
+      this account (from another stack/repo) and this stack will just add
+      a role that trusts it.
+
+Conditions:
+  ShouldCreateGitHubDeployRole: !And
+    - !Not [!Equals [!Ref GitHubOrg, '']]
+    - !Not [!Equals [!Ref GitHubRepo, '']]
+  ShouldCreateOIDCProvider: !Equals [!Ref CreateGitHubOIDCProvider, 'true']
+
 Resources:
 
   CloudFrontBucket:
@@ -215,6 +253,69 @@ Resources:
           ]
         }
 
+  # Lets GitHub Actions authenticate to AWS with short-lived, per-run
+  # credentials via OIDC instead of long-lived IAM user access keys.
+  # Only created when GitHubOrg/GitHubRepo are supplied.
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: ShouldCreateOIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  # Trust is scoped to this exact repo and branch via the 'sub' claim, so
+  # only workflow runs triggered from GitHubOrg/GitHubRepo on GitHubBranch
+  # can assume this role.
+  GitHubActionsDeployRole:
+    Type: AWS::IAM::Role
+    Condition: ShouldCreateGitHubDeployRole
+    Properties:
+      RoleName: !Sub
+        - '${SanitizedName}-github-deploy'
+        - SanitizedName: !Join ['-', !Split ['.', !Ref BucketName]]
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - ShouldCreateOIDCProvider
+                - !Ref GitHubOIDCProvider
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                'token.actions.githubusercontent.com:aud': sts.amazonaws.com
+              StringLike:
+                'token.actions.githubusercontent.com:sub': !Sub 'repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/${GitHubBranch}'
+      Policies:
+        - PolicyName: DeployWebsiteToS3AndInvalidateCloudFront
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ListAndSyncBucket
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt CloudFrontBucket.Arn
+              - Sid: ReadWriteObjects
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub '${CloudFrontBucket.Arn}/*'
+              - Sid: InvalidateDistribution
+                Effect: Allow
+                Action:
+                  - cloudfront:CreateInvalidation
+                Resource: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+
 Outputs:
   BucketName:
     Description: Name of the S3 bucket hosting the website
@@ -256,3 +357,10 @@ Outputs:
       Console URL for the CloudWatch dashboard showing CloudFront and S3
       request metrics.
     Value: !Sub 'https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=${CloudWatchDashboard}'
+
+  GitHubActionsDeployRoleArn:
+    Condition: ShouldCreateGitHubDeployRole
+    Description: >
+      ARN of the IAM role GitHub Actions assumes via OIDC to deploy the
+      site. Set this as the AWS_ROLE_ARN repository variable in GitHub.
+    Value: !GetAtt GitHubActionsDeployRole.Arn

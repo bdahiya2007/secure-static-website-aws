@@ -295,6 +295,18 @@ aws cloudformation wait stack-delete-complete --stack-name my-static-site --regi
   adding other AWS managed rule groups (e.g. `AWSManagedRulesCommonRuleSet`
   for broader baseline protection) as additional `Rules` entries with
   increasing `Priority` values.
-- **CI/CD**: the sync + invalidation steps above can be automated in a
-  GitHub Actions / CodePipeline workflow to auto-deploy on every push to
-  your site's repo.
+- **CI/CD**: [.github/workflows/deploy.yml](.github/workflows/deploy.yml)
+  automates the sync + invalidation steps above on every push to `main`.
+  It authenticates via GitHub OIDC (no long-lived AWS keys stored in
+  GitHub) by assuming the `GitHubActionsDeployRole` created by this
+  template. To enable it:
+  1. Redeploy this stack with `GitHubOrg` and `GitHubRepo` set (and
+     `CreateGitHubOIDCProvider=false` if your AWS account already has a
+     `token.actions.githubusercontent.com` OIDC provider from another
+     stack).
+  2. In the GitHub repo's Settings → Secrets and variables → Actions →
+     Variables, add:
+     - `AWS_ROLE_ARN` — the `GitHubActionsDeployRoleArn` stack output
+     - `S3_BUCKET_NAME` — the bucket name
+     - `CLOUDFRONT_DISTRIBUTION_ID` — the `CloudFrontDistributionId` output
+     - `AWS_REGION` — optional, defaults to `us-east-1`
