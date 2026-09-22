@@ -22,7 +22,8 @@ flowchart LR
     Visitor -->|DNS lookup| Route53[Route53<br/>external, not IaC-managed]
     Route53 -->|HTTPS| CloudFront[CloudFront Distribution]
     CloudFront -->|WAF inspects request| WAF[AWS WAF<br/>SQLi Managed Rules]
-    CloudFront -->|OAC signed request| S3[(Private S3 Bucket<br/>all public access blocked)]
+    CloudFront -->|"default: OAC signed request"| S3[(Private S3 Bucket<br/>website, all public access blocked)]
+    CloudFront -->|"/images/*: OAC signed request"| S3Images[(Private S3 Bucket<br/>product images, all public access blocked)]
     CloudFront --> CW[CloudWatch Dashboard<br/>CloudFront + S3 metrics]
 ```
 
@@ -40,8 +41,9 @@ flowchart LR
 
 | Decision | Reasoning |
 |---|---|
-| S3 bucket blocks all public access | Content is reachable only via CloudFront — removes the entire "open S3 bucket" class of misconfiguration |
-| CloudFront Origin Access Control (OAC) | The bucket policy trusts only this specific distribution's signed (SigV4) requests, not "any CloudFront distribution" and not the public internet |
+| S3 buckets block all public access | Content is reachable only via CloudFront — removes the entire "open S3 bucket" class of misconfiguration |
+| Product images live in a separate S3 bucket | Keeps image assets independently manageable (upload, lifecycle, cache TTL) from the site's HTML/CSS/JS, without exposing either bucket directly |
+| CloudFront Origin Access Control (OAC), one per origin | Each bucket policy trusts only this specific distribution's signed (SigV4) requests, not "any CloudFront distribution" and not the public internet; a compromised OAC on one origin doesn't grant access to the other |
 | AWS WAF (CLOUDFRONT scope), managed SQLi rule set | Blocks — not just logs — requests matching AWS-managed SQL injection signatures, at the edge, before they reach the origin |
 | HTTPS-only viewer policy | HTTP requests are redirected to HTTPS; no cleartext viewer traffic |
 | GitHub OIDC instead of IAM access keys | The deploy role is assumed via a short-lived token scoped to this exact repository (matched against GitHub's OIDC `sub` claim) — no long-lived AWS credentials stored in GitHub, nothing to leak or rotate |
@@ -54,10 +56,11 @@ flowchart LR
 
 ```
 .
-├── s3-static-website.yaml        # CloudFormation: S3 + CloudFront + OAC + WAF + CloudWatch + GitHub OIDC role
+├── s3-static-website.yaml        # CloudFormation: 2x S3 + CloudFront (multi-origin) + OAC + WAF + CloudWatch + GitHub OIDC role
 ├── deploy.sh                     # Manual sync helper (aws s3 sync wrapper)
 ├── Deployment.md                 # Full step-by-step deployment guide
 ├── s3-static-website/            # Website content (demo storefront: HTML/CSS/JS)
+├── product-images/               # Product images, synced to the dedicated images bucket at /images/*
 ├── terraform/                    # Alternate, simpler IaC path (see comparison below)
 └── .github/workflows/deploy.yml  # CI/CD: PR validation + OIDC-based deploy on merge
 ```
@@ -80,7 +83,7 @@ This repo intentionally includes two different implementations of "serve a stati
 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) runs two jobs, split by trigger:
 
 - **`validate`** — on every pull request targeting `main`. Lints the CloudFormation template with `cfn-lint` and previews the S3 sync with `--dryrun`; no AWS resources are changed. This is a required status check, so a PR cannot merge until it passes.
-- **`deploy`** — on push to `main` (i.e. after a PR merges). Syncs `s3-static-website/` to the bucket and creates a CloudFront invalidation.
+- **`deploy`** — on push to `main` (i.e. after a PR merges). Syncs `s3-static-website/` to the website bucket, syncs `product-images/` to the images bucket, and creates a CloudFront invalidation.
 
 Both jobs authenticate via GitHub's OIDC provider, assuming an IAM role whose trust policy is scoped to this exact repository — matched against GitHub's `sub` claim, including the immutable owner/repo IDs GitHub embeds in it. No `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` secrets exist anywhere in this repo.
 
@@ -100,6 +103,7 @@ aws cloudformation deploy \
       GitHubRepo=<your-repo-name>
 
 aws s3 sync ./s3-static-website s3://<your-bucket-name>/
+aws s3 sync ./product-images s3://<your-bucket-name>-images/
 ```
 
 ## Tech stack

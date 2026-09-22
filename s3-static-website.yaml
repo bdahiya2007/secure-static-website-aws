@@ -2,12 +2,15 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   Creates an S3 bucket configured for static website hosting, fronted by a
   CloudFront distribution using Origin Access Control (OAC), protected by
-  an AWS WAF web ACL with the AWS managed SQL injection rule set. The
-  bucket itself blocks all public access; content is only reachable
-  through CloudFront. NOTE: because the WAF web ACL is scoped to
-  CloudFront, this stack must be deployed in the us-east-1 (N. Virginia)
-  region — that is an AWS WAF requirement for CloudFront-scoped web ACLs,
-  regardless of which region your users or other resources are in.
+  an AWS WAF web ACL with the AWS managed SQL injection rule set. A second,
+  dedicated S3 bucket stores product images and is served from the same
+  CloudFront distribution as an additional origin, routed via the
+  /images/* path pattern and secured with its own OAC. Both buckets block
+  all public access; content is only reachable through CloudFront. NOTE:
+  because the WAF web ACL is scoped to CloudFront, this stack must be
+  deployed in the us-east-1 (N. Virginia) region — that is an AWS WAF
+  requirement for CloudFront-scoped web ACLs, regardless of which region
+  your users or other resources are in.
 
 Parameters:
   BucketName:
@@ -140,6 +143,35 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
 
+  # Dedicated bucket for product images, kept separate from the website
+  # bucket so images can be managed (uploaded, versioned, lifecycled)
+  # independently of the site's HTML/CSS/JS. Reachable only through
+  # CloudFront, via its own OAC — same private-by-default posture as
+  # CloudFrontBucket. Object keys are expected to mirror the public URL
+  # path (e.g. an object at key "images/products/foo.jpg" is served at
+  # "/images/products/foo.jpg"), since no OriginPath is set on this
+  # origin below.
+  ImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketName}-images'
+      # See the comment on CloudFrontBucket's AccessControl property —
+      # same reasoning applies here even though this bucket has no
+      # WebsiteConfiguration.
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      MetricsConfigurations:
+        - Id: EntireBucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+
   # Bucket policy grants access only to this specific CloudFront distribution,
   # via Origin Access Control (SigV4-signed requests to the S3 REST endpoint).
   CloudFrontBucketPolicy:
@@ -165,6 +197,38 @@ Resources:
       OriginAccessControlConfig:
         Name: !Sub '${BucketName}-oac'
         Description: OAC for CloudFront to access the S3 static website bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # Bucket policy grants access only to this specific CloudFront
+  # distribution, via the images bucket's own Origin Access Control.
+  ImagesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ImagesBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: 's3:GetObject'
+            Resource: !Sub '${ImagesBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                'AWS:SourceArn': !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+
+  # Separate OAC for the images bucket/origin, distinct from the one used
+  # for the website bucket — each origin gets its own OAC so access can be
+  # scoped, audited, and rotated independently.
+  ImagesOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${BucketName}-images-oac'
+        Description: OAC for CloudFront to access the S3 product images bucket
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
@@ -232,6 +296,13 @@ Resources:
             S3OriginConfig:
               OriginAccessIdentity: ''
             OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
+          - Id: S3ImagesOrigin
+            # Same REST/OAC pattern as the website origin above, pointed
+            # at the dedicated images bucket.
+            DomainName: !GetAtt ImagesBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !GetAtt ImagesOriginAccessControl.Id
         DefaultCacheBehavior:
           TargetOriginId: S3CloudFrontOrigin
           ViewerProtocolPolicy: redirect-to-https
@@ -243,6 +314,20 @@ Resources:
             - HEAD
           Compress: true
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # AWS Managed-CachingOptimized
+        # Routes any request under /images/* to the dedicated images
+        # bucket instead of the website bucket.
+        CacheBehaviors:
+          - PathPattern: /images/*
+            TargetOriginId: S3ImagesOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+            CachedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # AWS Managed-CachingOptimized
         CustomErrorResponses:
           - ErrorCode: 403
             ResponseCode: 404
@@ -365,6 +450,18 @@ Resources:
                   - s3:PutObject
                   - s3:DeleteObject
                 Resource: !Sub '${CloudFrontBucket.Arn}/*'
+              - Sid: ListAndSyncImagesBucket
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt ImagesBucket.Arn
+              - Sid: ReadWriteImageObjects
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub '${ImagesBucket.Arn}/*'
               - Sid: InvalidateDistribution
                 Effect: Allow
                 Action:
@@ -390,6 +487,18 @@ Outputs:
   BucketArn:
     Description: ARN of the S3 bucket
     Value: !GetAtt CloudFrontBucket.Arn
+
+  ImagesBucketName:
+    Description: Name of the S3 bucket storing product images
+    Value: !Ref ImagesBucket
+
+  ImagesBucketArn:
+    Description: ARN of the S3 product images bucket
+    Value: !GetAtt ImagesBucket.Arn
+
+  ImagesBucketDomainName:
+    Description: Regional S3 domain name of the images bucket (CloudFront origin)
+    Value: !GetAtt ImagesBucket.RegionalDomainName
 
   CloudFrontDistributionId:
     Description: ID of the CloudFront distribution
