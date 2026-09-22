@@ -134,6 +134,14 @@ Resources:
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
+      # Lets uploaders (deploy.sh, the GitHub Actions workflow) use the
+      # bucket's s3-accelerate endpoint, which routes the upload through
+      # the nearest CloudFront edge location instead of going directly
+      # to the bucket's region - speeds up "aws s3 sync" from locations
+      # far from us-east-1. No effect on how CloudFront serves reads;
+      # this only accelerates writes to the bucket.
+      AccelerateConfiguration:
+        AccelerationStatus: Enabled
       # Enables the AWS/S3 per-request metrics (AllRequests, GetRequests,
       # etc.) for the whole bucket, published under FilterId "EntireBucket".
       # These aren't published to CloudWatch by default and carry their own
@@ -167,6 +175,10 @@ Resources:
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
+      # See the comment on CloudFrontBucket's AccelerateConfiguration —
+      # same rationale, so uploading product images benefits too.
+      AccelerateConfiguration:
+        AccelerationStatus: Enabled
       MetricsConfigurations:
         - Id: EntireBucket
     DeletionPolicy: Retain
@@ -488,6 +500,14 @@ Outputs:
     Description: ARN of the S3 bucket
     Value: !GetAtt CloudFrontBucket.Arn
 
+  BucketAccelerateEndpoint:
+    Description: >
+      S3 Transfer Acceleration endpoint for the website bucket. Use this
+      instead of the regular endpoint (e.g. via 'aws s3 sync --endpoint-url'
+      or 'aws configure set default.s3.use_accelerate_endpoint true') to
+      speed up uploads from locations far from this bucket's region.
+    Value: !Sub 'https://${CloudFrontBucket}.s3-accelerate.amazonaws.com'
+
   ImagesBucketName:
     Description: Name of the S3 bucket storing product images
     Value: !Ref ImagesBucket
@@ -499,6 +519,12 @@ Outputs:
   ImagesBucketDomainName:
     Description: Regional S3 domain name of the images bucket (CloudFront origin)
     Value: !GetAtt ImagesBucket.RegionalDomainName
+
+  ImagesBucketAccelerateEndpoint:
+    Description: >
+      S3 Transfer Acceleration endpoint for the images bucket. See
+      BucketAccelerateEndpoint for usage.
+    Value: !Sub 'https://${ImagesBucket}.s3-accelerate.amazonaws.com'
 
   CloudFrontDistributionId:
     Description: ID of the CloudFront distribution

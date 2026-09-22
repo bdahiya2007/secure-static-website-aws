@@ -40,6 +40,14 @@ characters). Pick a name now, e.g. `my-company-static-site`.
 > the bucket blocks all public access and is only reached through
 > CloudFront's signed OAC connection, not a browser hitting the S3
 > endpoint directly.
+>
+> **Exception: S3 Transfer Acceleration.** Both buckets have
+> `AccelerateConfiguration: Enabled` in this template. AWS requires
+> Transfer Acceleration bucket names to be DNS-compliant and **not
+> contain periods** — a dotted `BucketName` (e.g. `example.com`) will
+> fail to enable acceleration. If you're using a domain-style
+> `BucketName`, use a dot-free name instead (e.g. `example-com`) or
+> remove `AccelerateConfiguration` from the template.
 
 ## 2. Deploy the CloudFormation stack
 
