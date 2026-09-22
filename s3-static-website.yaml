@@ -179,6 +179,31 @@ Resources:
       # same rationale, so uploading product images benefits too.
       AccelerateConfiguration:
         AccelerationStatus: Enabled
+      # Product images are read far more often right after upload than
+      # months later, so ageing them into cheaper storage classes cuts
+      # cost. No rule applies to the website bucket — that content is
+      # small and changes too often for this to pay off.
+      #
+      # WARNING: GLACIER (Flexible Retrieval) is not readable via a plain
+      # GetObject — S3 returns 403 InvalidObjectState until the object is
+      # explicitly restored, a process that takes minutes to hours. Once
+      # an image crosses 180 days, the next time CloudFront's cache for
+      # it expires and revalidates against this origin, that image will
+      # start failing to load on the live site until someone notices and
+      # runs a restore. This is a deliberate tradeoff (cost over
+      # long-tail availability), not an oversight — if that's not
+      # acceptable, switch StorageClass to GLACIER_IR (Glacier Instant
+      # Retrieval), which stays transparently readable at a similar
+      # price point.
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionAgingProductImages
+            Status: Enabled
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 60
+              - StorageClass: GLACIER
+                TransitionInDays: 180
       MetricsConfigurations:
         - Id: EntireBucket
     DeletionPolicy: Retain

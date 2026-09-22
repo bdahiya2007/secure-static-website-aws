@@ -320,6 +320,18 @@ aws cloudformation wait stack-delete-complete --stack-name my-static-site --regi
 - **Access logging**: consider enabling CloudFront access logs (to a
   separate S3 bucket) and/or S3 server access logging if you need
   visibility into who's accessing the site.
+- **Images bucket lifecycle rules**: product images transition to
+  `STANDARD_IA` after 60 days and `GLACIER` (Flexible Retrieval) after
+  180 days, to cut storage cost on older, rarely-touched images. **This
+  has a real availability tradeoff**: once an object is in `GLACIER`, a
+  plain `GetObject` fails with `403 InvalidObjectState` until it's
+  explicitly restored (minutes to hours) — so an image older than 180
+  days can start failing to load on the live site the next time
+  CloudFront's cache for it expires and revalidates against the bucket.
+  If you'd rather keep long-tail images transparently readable, change
+  the second transition's `StorageClass` from `GLACIER` to `GLACIER_IR`
+  (Glacier Instant Retrieval) in `s3-static-website.yaml` — similar
+  cost, but no restore step.
 - **WAF protection**: the attached web ACL currently runs only the AWS
   managed `AWSManagedRulesSQLiRuleSet` rule group in blocking mode. If you
   see false positives (legitimate requests being blocked), you can switch
