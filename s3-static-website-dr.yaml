@@ -36,9 +36,12 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub '${BucketName}-replica'
-      # Same ACL/OwnershipControls reasoning as the primary template's
-      # CloudFrontBucket - see the comment there.
-      AccessControl: Private
+      # No AccessControl property here (unlike the primary template's
+      # CloudFrontBucket): that property is only kept there to avoid
+      # breaking CloudFormation *updates* on a bucket that already had
+      # it set before OwnershipControls: BucketOwnerEnforced was added.
+      # These are new buckets with no such history, so it can just be
+      # left out - OwnershipControls below already disables ACLs.
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -58,7 +61,6 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub '${BucketName}-images-replica'
-      AccessControl: Private
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
