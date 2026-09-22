@@ -7,7 +7,7 @@ const products = [
         category: "electronics",
         rating: 4.5,
         reviews: 1234,
-        image: "/images/products/wireless-bluetooth-headphones.svg"
+        image: "/images/products/wireless-bluetooth-headphones.jpg"
     },
     {
         id: 2,
@@ -16,7 +16,7 @@ const products = [
         category: "clothing",
         rating: 4.2,
         reviews: 567,
-        image: "/images/products/cotton-casual-tshirt.svg"
+        image: "/images/products/cotton-casual-tshirt.jpg"
     },
     {
         id: 3,
@@ -25,7 +25,7 @@ const products = [
         category: "books",
         rating: 4.7,
         reviews: 890,
-        image: "/images/products/javascript-the-good-parts.svg"
+        image: "/images/products/javascript-the-good-parts.jpg"
     },
     {
         id: 4,
@@ -34,7 +34,7 @@ const products = [
         category: "home",
         rating: 4.3,
         reviews: 445,
-        image: "/images/products/smart-led-light-bulb.svg"
+        image: "/images/products/smart-led-light-bulb.jpg"
     },
     {
         id: 5,
@@ -43,7 +43,7 @@ const products = [
         category: "electronics",
         rating: 4.6,
         reviews: 778,
-        image: "/images/products/wireless-gaming-mouse.svg"
+        image: "/images/products/wireless-gaming-mouse.jpg"
     },
     {
         id: 6,
@@ -52,7 +52,7 @@ const products = [
         category: "clothing",
         rating: 4.1,
         reviews: 334,
-        image: "/images/products/denim-jeans.svg"
+        image: "/images/products/denim-jeans.jpg"
     },
     {
         id: 7,
@@ -61,7 +61,7 @@ const products = [
         category: "books",
         rating: 4.8,
         reviews: 1122,
-        image: "/images/products/the-art-of-clean-code.svg"
+        image: "/images/products/the-art-of-clean-code.jpg"
     },
     {
         id: 8,
@@ -70,7 +70,7 @@ const products = [
         category: "home",
         rating: 4.4,
         reviews: 267,
-        image: "/images/products/ceramic-coffee-mug-set.svg"
+        image: "/images/products/ceramic-coffee-mug-set.jpg"
     },
     {
         id: 9,
@@ -79,7 +79,7 @@ const products = [
         category: "electronics",
         rating: 4.5,
         reviews: 543,
-        image: "/images/products/4k-webcam.svg"
+        image: "/images/products/4k-webcam.jpg"
     },
     {
         id: 10,
@@ -88,7 +88,7 @@ const products = [
         category: "sports",
         rating: 4.3,
         reviews: 689,
-        image: "/images/products/running-shoes.svg"
+        image: "/images/products/running-shoes.jpg"
     },
     {
         id: 11,
@@ -97,7 +97,7 @@ const products = [
         category: "sports",
         rating: 4.6,
         reviews: 412,
-        image: "/images/products/yoga-mat.svg"
+        image: "/images/products/yoga-mat.jpg"
     },
     {
         id: 12,
@@ -106,7 +106,7 @@ const products = [
         category: "sports",
         rating: 4.4,
         reviews: 356,
-        image: "/images/products/stainless-steel-water-bottle.svg"
+        image: "/images/products/stainless-steel-water-bottle.jpg"
     }
 ];
 
