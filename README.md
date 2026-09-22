@@ -43,6 +43,7 @@ flowchart LR
 |---|---|
 | S3 buckets block all public access | Content is reachable only via CloudFront — removes the entire "open S3 bucket" class of misconfiguration |
 | Product images live in a separate S3 bucket | Keeps image assets independently manageable (upload, lifecycle, cache TTL) from the site's HTML/CSS/JS, without exposing either bucket directly |
+| S3 Transfer Acceleration on both buckets | Uploads (`aws s3 sync` from `deploy.sh` / CI) route through the nearest CloudFront edge location instead of going straight to the bucket's region — requires a dot-free `BucketName`, since AWS doesn't support Transfer Acceleration on dotted bucket names |
 | CloudFront Origin Access Control (OAC), one per origin | Each bucket policy trusts only this specific distribution's signed (SigV4) requests, not "any CloudFront distribution" and not the public internet; a compromised OAC on one origin doesn't grant access to the other |
 | AWS WAF (CLOUDFRONT scope), managed SQLi rule set | Blocks — not just logs — requests matching AWS-managed SQL injection signatures, at the edge, before they reach the origin |
 | HTTPS-only viewer policy | HTTP requests are redirected to HTTPS; no cleartext viewer traffic |
