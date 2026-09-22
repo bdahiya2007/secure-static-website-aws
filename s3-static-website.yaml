@@ -199,6 +199,15 @@ Resources:
         Rules:
           - Id: TransitionAgingProductImages
             Status: Enabled
+            # Deliberately NOT overriding S3's default 128 KB minimum
+            # object size for transitions. Standard-IA/Glacier bill each
+            # object at a 128 KB minimum regardless of its actual size,
+            # so transitioning anything smaller than that costs MORE
+            # than leaving it in Standard, not less. This bucket's
+            # current product photos (a few KB to a few dozen KB each)
+            # are all under that threshold, so the default correctly
+            # skips them today; the rule is here for when larger,
+            # higher-resolution images are added later.
             Transitions:
               - StorageClass: STANDARD_IA
                 TransitionInDays: 60
