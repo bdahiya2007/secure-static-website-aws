@@ -7,7 +7,7 @@ const products = [
         category: "electronics",
         rating: 4.5,
         reviews: 1234,
-        image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=300&h=300&fit=crop&crop=center"
+        image: "/images/products/wireless-bluetooth-headphones.svg"
     },
     {
         id: 2,
@@ -16,7 +16,7 @@ const products = [
         category: "clothing",
         rating: 4.2,
         reviews: 567,
-        image: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=300&h=300&fit=crop&crop=center"
+        image: "/images/products/cotton-casual-tshirt.svg"
     },
     {
         id: 3,
@@ -25,7 +25,7 @@ const products = [
         category: "books",
         rating: 4.7,
         reviews: 890,
-        image: "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=300&h=300&fit=crop&crop=center"
+        image: "/images/products/javascript-the-good-parts.svg"
     },
     {
         id: 4,
@@ -34,7 +34,7 @@ const products = [
         category: "home",
         rating: 4.3,
         reviews: 445,
-        image: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=300&h=300&fit=crop&crop=center"
+        image: "/images/products/smart-led-light-bulb.svg"
     },
     {
         id: 5,
@@ -43,7 +43,7 @@ const products = [
         category: "electronics",
         rating: 4.6,
         reviews: 778,
-        image: "https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=300&h=300&fit=crop&crop=center"
+        image: "/images/products/wireless-gaming-mouse.svg"
     },
     {
         id: 6,
@@ -52,7 +52,7 @@ const products = [
         category: "clothing",
         rating: 4.1,
         reviews: 334,
-        image: "https://images.unsplash.com/photo-1542272604-787c3835535d?w=300&h=300&fit=crop&crop=center"
+        image: "/images/products/denim-jeans.svg"
     },
     {
         id: 7,
@@ -61,7 +61,7 @@ const products = [
         category: "books",
         rating: 4.8,
         reviews: 1122,
-        image: "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=300&h=300&fit=crop&crop=center"
+        image: "/images/products/the-art-of-clean-code.svg"
     },
     {
         id: 8,
@@ -70,7 +70,7 @@ const products = [
         category: "home",
         rating: 4.4,
         reviews: 267,
-        image: "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=300&h=300&fit=crop&crop=center"
+        image: "/images/products/ceramic-coffee-mug-set.svg"
     },
     {
         id: 9,
@@ -79,7 +79,7 @@ const products = [
         category: "electronics",
         rating: 4.5,
         reviews: 543,
-        image: "https://images.unsplash.com/photo-1587825140708-dfaf72ae4b04?w=300&h=300&fit=crop&crop=center"
+        image: "/images/products/4k-webcam.svg"
     },
     {
         id: 10,
@@ -88,7 +88,7 @@ const products = [
         category: "sports",
         rating: 4.3,
         reviews: 689,
-        image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=300&h=300&fit=crop&crop=center"
+        image: "/images/products/running-shoes.svg"
     },
     {
         id: 11,
@@ -97,7 +97,7 @@ const products = [
         category: "sports",
         rating: 4.6,
         reviews: 412,
-        image: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=300&h=300&fit=crop&crop=center"
+        image: "/images/products/yoga-mat.svg"
     },
     {
         id: 12,
@@ -106,7 +106,7 @@ const products = [
         category: "sports",
         rating: 4.4,
         reviews: 356,
-        image: "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=300&h=300&fit=crop&crop=center"
+        image: "/images/products/stainless-steel-water-bottle.svg"
     }
 ];
 

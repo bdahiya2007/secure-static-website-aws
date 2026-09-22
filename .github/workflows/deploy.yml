@@ -42,6 +42,7 @@ jobs:
       - name: Preview S3 sync (dry run)
         run: |
           aws s3 sync ./s3-static-website "s3://${{ vars.S3_BUCKET_NAME }}/" --delete --dryrun
+          aws s3 sync ./product-images "s3://${{ vars.IMAGES_BUCKET_NAME }}/" --delete --dryrun
 
   # Runs only after a push lands on main (i.e. after a PR merges).
   deploy:
@@ -69,6 +70,13 @@ jobs:
       - name: Sync website files to S3
         run: |
           aws s3 sync ./s3-static-website "s3://${{ vars.S3_BUCKET_NAME }}/" --delete
+
+      # product-images/images/... mirrors the /images/* URL path exactly,
+      # so it lands in the images bucket at the same key CloudFront
+      # requests (see the ImagesBucket comment in s3-static-website.yaml).
+      - name: Sync product images to S3
+        run: |
+          aws s3 sync ./product-images "s3://${{ vars.IMAGES_BUCKET_NAME }}/" --delete
 
       - name: Invalidate CloudFront cache
         run: |

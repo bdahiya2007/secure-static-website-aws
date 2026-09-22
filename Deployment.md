@@ -22,7 +22,7 @@ served through CloudFront and protected by an AWS WAF web ACL.
 
 | File | Purpose |
 |---|---|
-| `s3-static-website.yaml` | CloudFormation template that creates a private S3 bucket (static website hosting enabled but not publicly reachable), a CloudFront distribution with Origin Access Control (OAC), an AWS WAF web ACL (with the AWS managed SQL injection rule set) attached to the distribution, and a bucket policy that only allows that distribution to read objects. |
+| `s3-static-website.yaml` | CloudFormation template that creates a private S3 bucket (static website hosting enabled but not publicly reachable), a dedicated private S3 bucket for product images, a CloudFront distribution with Origin Access Control (OAC) for each bucket, an AWS WAF web ACL (with the AWS managed SQL injection rule set) attached to the distribution, and bucket policies that only allow that distribution to read objects. |
 | `Deployment.md` | This guide. |
 
 ## 1. Choose a bucket name
@@ -71,16 +71,20 @@ This creates:
 
 - An S3 bucket with static website hosting configured, but with **all
   public access blocked**.
-- A CloudFront **Origin Access Control (OAC)**.
+- A second S3 bucket, named `<BucketName>-images`, dedicated to product
+  images — also with all public access blocked, and its own OAC.
+- A CloudFront **Origin Access Control (OAC)** for each bucket.
 - An AWS **WAF web ACL** (`Scope: CLOUDFRONT`) with the AWS managed
   `AWSManagedRulesSQLiRuleSet` rule group, actively blocking (not just
   logging) requests that look like SQL injection attempts.
-- A **CloudFront distribution** that uses OAC to reach the bucket over the
-  S3 REST (regional) endpoint, with the WAF web ACL attached, a managed
-  `CachingOptimized` cache policy, and HTTPS-only viewer traffic.
-- A bucket policy that grants `s3:GetObject` only to that specific
-  CloudFront distribution (scoped via `AWS:SourceArn`) — the bucket itself
-  is not publicly reachable.
+- A **CloudFront distribution** with two origins — the website bucket
+  (default behavior) and the images bucket (routed via a `/images/*`
+  cache behavior) — both reached over the S3 REST (regional) endpoint via
+  OAC, with the WAF web ACL attached, a managed `CachingOptimized` cache
+  policy, and HTTPS-only viewer traffic.
+- A bucket policy on each bucket that grants `s3:GetObject` only to that
+  specific CloudFront distribution (scoped via `AWS:SourceArn`) — neither
+  bucket is publicly reachable.
 
 Note: CloudFront distributions take longer to deploy than a plain S3
 website — expect the `deploy` command to take **5–15 minutes**.
@@ -104,7 +108,17 @@ Sync your local website folder to the bucket:
 aws s3 sync ./website/ s3://my-company-static-site/
 ```
 
-Re-run this command any time your content changes (see step 7 for cache
+Then sync your product images to the images bucket. Object keys must mirror
+the public `/images/...` URL path exactly (e.g. a file served at
+`/images/products/foo.jpg` must be uploaded as key `images/products/foo.jpg`),
+since the CloudFront cache behavior for `/images/*` forwards the request
+path as-is to this origin:
+
+```bash
+aws s3 sync ./product-images/ s3://my-company-static-site-images/
+```
+
+Re-run both commands any time your content changes (see step 7 for cache
 invalidation after updates).
 
 ## 5. Get the CloudFront URL
@@ -134,10 +148,11 @@ Open that URL in a browser to view your live site.
 
 ## 6. Updating the site later
 
-To push content updates, re-run the sync command:
+To push content updates, re-run the sync commands:
 
 ```bash
 aws s3 sync ./website/ s3://my-company-static-site/ --delete
+aws s3 sync ./product-images/ s3://my-company-static-site-images/ --delete
 ```
 
 The `--delete` flag removes files from the bucket that no longer exist
@@ -219,16 +234,17 @@ Rules → Sampled requests**.
 
 ## 10. Tearing down
 
-To delete the stack (and, if the bucket is empty, the bucket itself):
+To delete the stack (and, if the buckets are empty, the buckets themselves):
 
 ```bash
 aws s3 rm s3://my-company-static-site/ --recursive
+aws s3 rm s3://my-company-static-site-images/ --recursive
 aws cloudformation delete-stack --stack-name my-static-site --region us-east-1
 ```
 
-The bucket must be emptied manually first — the template sets a
-`Retain` deletion policy on the bucket so CloudFormation won't delete it
-automatically, and S3 also won't delete a non-empty bucket.
+Both buckets must be emptied manually first — the template sets a
+`Retain` deletion policy on each bucket so CloudFormation won't delete
+them automatically, and S3 also won't delete a non-empty bucket.
 
 CloudFront distribution deletion can take several minutes after the stack
 delete is initiated, since AWS must first disable the distribution before
@@ -316,6 +332,7 @@ aws cloudformation wait stack-delete-complete --stack-name my-static-site --regi
   2. In the GitHub repo's Settings → Secrets and variables → Actions →
      Variables, add:
      - `AWS_ROLE_ARN` — the `GitHubActionsDeployRoleArn` stack output
-     - `S3_BUCKET_NAME` — the bucket name
+     - `S3_BUCKET_NAME` — the website bucket name
+     - `IMAGES_BUCKET_NAME` — the `ImagesBucketName` stack output
      - `CLOUDFRONT_DISTRIBUTION_ID` — the `CloudFrontDistributionId` output
      - `AWS_REGION` — optional, defaults to `us-east-1`
