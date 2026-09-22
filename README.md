@@ -25,6 +25,8 @@ flowchart LR
     CloudFront -->|"default: OAC signed request"| S3[(Private S3 Bucket<br/>website, all public access blocked)]
     CloudFront -->|"/images/*: OAC signed request"| S3Images[(Private S3 Bucket<br/>product images, all public access blocked)]
     CloudFront --> CW[CloudWatch Dashboard<br/>CloudFront + S3 metrics]
+    S3 -.->|"Cross-Region Replication (optional)"| S3DR[(Replica bucket<br/>secondary region)]
+    S3Images -.->|"Cross-Region Replication (optional)"| S3ImagesDR[(Replica bucket<br/>secondary region)]
 ```
 
 ```mermaid
@@ -45,6 +47,7 @@ flowchart LR
 | Product images live in a separate S3 bucket | Keeps image assets independently manageable (upload, lifecycle, cache TTL) from the site's HTML/CSS/JS, without exposing either bucket directly |
 | S3 Transfer Acceleration on both buckets | Uploads (`aws s3 sync` from `deploy.sh` / CI) route through the nearest CloudFront edge location instead of going straight to the bucket's region — requires a dot-free `BucketName`, since AWS doesn't support Transfer Acceleration on dotted bucket names |
 | Lifecycle rules on the images bucket only | Product images transition to Standard-IA at 60 days and Glacier at 180 days, cutting storage cost as they age — deliberately not applied to the website bucket (too small, changes too often to be worth it) or overridden below S3's 128 KB minimum transition size (would cost more than it saves at this bucket's current image sizes). Glacier means an image past 180 days can briefly fail to load until restored, a deliberate cost-over-availability tradeoff — see `Deployment.md` for the `GLACIER_IR` alternative |
+| Cross-Region Replication is optional and lives in a second template | Destination buckets for DR must live in a different region than this stack (pinned to `us-east-1` for the CLOUDFRONT-scoped WAF), and CloudFormation can't create resources outside its own stack's region — `s3-static-website-dr.yaml` creates them separately, and the primary stack only turns on replication once given their ARNs. Versioning and a 90-day noncurrent-version expiration rule are on unconditionally on both source buckets either way, since every `--delete` deploy leaves old versions behind |
 | CloudFront Origin Access Control (OAC), one per origin | Each bucket policy trusts only this specific distribution's signed (SigV4) requests, not "any CloudFront distribution" and not the public internet; a compromised OAC on one origin doesn't grant access to the other |
 | AWS WAF (CLOUDFRONT scope), managed SQLi rule set | Blocks — not just logs — requests matching AWS-managed SQL injection signatures, at the edge, before they reach the origin |
 | HTTPS-only viewer policy | HTTP requests are redirected to HTTPS; no cleartext viewer traffic |
@@ -59,6 +62,7 @@ flowchart LR
 ```
 .
 ├── s3-static-website.yaml        # CloudFormation: 2x S3 + CloudFront (multi-origin) + OAC + WAF + CloudWatch + GitHub OIDC role
+├── s3-static-website-dr.yaml     # CloudFormation: optional DR replica buckets, deployed to a secondary region
 ├── deploy.sh                     # Manual sync helper (aws s3 sync wrapper)
 ├── Deployment.md                 # Full step-by-step deployment guide
 ├── s3-static-website/            # Website content (demo storefront: HTML/CSS/JS)
@@ -110,4 +114,4 @@ aws s3 sync ./product-images s3://<your-bucket-name>-images/
 
 ## Tech stack
 
-AWS CloudFormation · Amazon S3 · Amazon CloudFront (OAC) · AWS WAFv2 · AWS IAM (OIDC federation) · Amazon CloudWatch · Amazon Route53 (DNS, managed separately from this stack) · Terraform (alternate path) · GitHub Actions
+AWS CloudFormation · Amazon S3 (Cross-Region Replication, lifecycle rules, Transfer Acceleration) · Amazon CloudFront (OAC) · AWS WAFv2 · AWS IAM (OIDC federation) · Amazon CloudWatch · Amazon Route53 (DNS, managed separately from this stack) · Terraform (alternate path) · GitHub Actions

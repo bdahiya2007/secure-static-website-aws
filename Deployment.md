@@ -22,7 +22,8 @@ served through CloudFront and protected by an AWS WAF web ACL.
 
 | File | Purpose |
 |---|---|
-| `s3-static-website.yaml` | CloudFormation template that creates a private S3 bucket (static website hosting enabled but not publicly reachable), a dedicated private S3 bucket for product images, a CloudFront distribution with Origin Access Control (OAC) for each bucket, an AWS WAF web ACL (with the AWS managed SQL injection rule set) attached to the distribution, and bucket policies that only allow that distribution to read objects. |
+| `s3-static-website.yaml` | CloudFormation template that creates a private S3 bucket (static website hosting enabled but not publicly reachable), a dedicated private S3 bucket for product images, a CloudFront distribution with Origin Access Control (OAC) for each bucket, an AWS WAF web ACL (with the AWS managed SQL injection rule set) attached to the distribution, and bucket policies that only allow that distribution to read objects. Optionally replicates both buckets to a secondary region — see [step 11](#11-disaster-recovery-cross-region-replication-optional). |
+| `s3-static-website-dr.yaml` | Companion template, deployed separately to a secondary region, that creates the two disaster-recovery destination buckets used by `s3-static-website.yaml`'s replication. |
 | `Deployment.md` | This guide. |
 
 ## 1. Choose a bucket name
@@ -258,6 +259,114 @@ CloudFront distribution deletion can take several minutes after the stack
 delete is initiated, since AWS must first disable the distribution before
 it can be removed. `delete-stack` handles this automatically, but the
 overall teardown may take longer than the S3-only version of this stack.
+
+## 11. Disaster recovery: Cross-Region Replication (optional)
+
+Both buckets can be replicated to destination buckets in a secondary AWS
+region, for disaster recovery. This is a two-stack process — CloudFormation
+deploys to a single region, so the destination buckets can't be created by
+`s3-static-website.yaml` itself.
+
+### 11a. Deploy the DR stack to your secondary region
+
+Pick a secondary region (e.g. `us-west-2`) and deploy `s3-static-website-dr.yaml`
+there, using the **same** `BucketName` value as your primary stack:
+
+```bash
+aws cloudformation deploy \
+  --template-file s3-static-website-dr.yaml \
+  --stack-name my-static-site-dr \
+  --region us-west-2 \
+  --parameter-overrides BucketName=my-company-static-site
+```
+
+This creates two private, versioned buckets (`<BucketName>-replica` and
+`<BucketName>-images-replica`) with no website hosting, CloudFront, or WAF —
+they're pure replication targets, not meant to be served directly.
+
+### 11b. Get the destination bucket ARNs
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name my-static-site-dr \
+  --region us-west-2 \
+  --query "Stacks[0].Outputs"
+```
+
+Note the `WebsiteReplicaBucketArn` and `ImagesReplicaBucketArn` values.
+
+### 11c. Redeploy the primary stack with replication enabled
+
+```bash
+aws cloudformation deploy \
+  --template-file s3-static-website.yaml \
+  --stack-name my-static-site \
+  --region us-east-1 \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+      EnableCrossRegionReplication=true \
+      WebsiteReplicaBucketArn=arn:aws:s3:::my-company-static-site-replica \
+      ImagesReplicaBucketArn=arn:aws:s3:::my-company-static-site-images-replica
+```
+
+This turns on versioning (required for replication) and a 90-day
+noncurrent-version expiration rule on both source buckets, creates the IAM
+roles S3 replication assumes, and attaches a replication rule to each
+bucket. Any parameter you don't explicitly override (like `BucketName`)
+keeps its existing value.
+
+> **Replication is not retroactive.** S3 Cross-Region Replication only
+> replicates objects created (or deleted) *after* replication is enabled —
+> it does not automatically copy objects that already existed in the
+> bucket. If you're enabling this on a bucket that already has content
+> (as is normally the case here, since the site is usually deployed
+> before DR is set up), do a one-time sync to seed the replica buckets:
+> ```bash
+> aws s3 sync s3://my-company-static-site/ s3://my-company-static-site-replica/
+> aws s3 sync s3://my-company-static-site-images/ s3://my-company-static-site-images-replica/
+> ```
+> or use [S3 Batch Replication](https://docs.aws.amazon.com/AmazonS3/latest/userguide/replication-batch-replication-batch.html)
+> for a large existing bucket.
+
+### 11d. Verify replication
+
+```bash
+aws s3api get-bucket-replication --bucket my-company-static-site
+```
+
+After the next deploy (or the one-time sync above), check that objects
+appear in the replica bucket in the secondary region:
+
+```bash
+aws s3 ls s3://my-company-static-site-replica/ --region us-west-2
+```
+
+Replication is asynchronous — most objects replicate within seconds to a
+few minutes, but S3 doesn't guarantee a specific time unless you also
+enable [S3 Replication Time Control](https://docs.aws.amazon.com/AmazonS3/latest/userguide/replication-time-control.html)
+(not configured by this template).
+
+### Notes
+
+- **Storage class on replicas**: replication carries over whichever
+  storage class an object is in *at the moment it's replicated* — normally
+  `STANDARD`, right after upload. It does **not** replicate storage-class
+  changes made later by a bucket's own lifecycle rules (e.g. the images
+  bucket's Standard-IA/Glacier transitions — see the `LifecycleConfiguration`
+  comment on `ImagesBucket` in `s3-static-website.yaml`). If you want
+  replicas to age into cheaper storage too, add a matching lifecycle rule
+  directly on the replica buckets in `s3-static-website-dr.yaml`.
+- **Cost**: replication itself has a per-GB data transfer charge between
+  regions, on top of the destination buckets' own storage cost. For this
+  project's scale (a few hundred KB of site content and images), this is
+  negligible — it matters more for buckets with large or frequently-changing
+  content.
+- **Tearing down DR**: empty and delete the DR stack's buckets the same way
+  as the primary ones (step 10), then `aws cloudformation delete-stack
+  --stack-name my-static-site-dr --region us-west-2`. Do this *before*
+  redeploying the primary stack with `EnableCrossRegionReplication=false`
+  if you want a clean teardown order, since the primary stack's replication
+  rule references the DR bucket ARNs.
 
 ## Troubleshooting
 

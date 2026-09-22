@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Creates the disaster-recovery destination buckets for
+  s3-static-website.yaml's Cross-Region Replication. Deploy this
+  template to the secondary region BEFORE enabling replication on the
+  primary stack - the primary template needs these buckets' ARNs as
+  parameters (EnableCrossRegionReplication, WebsiteReplicaBucketArn,
+  ImagesReplicaBucketArn), and CloudFormation can't create resources
+  in a different region than the stack itself, so this has to be a
+  separate stack deployed to that region.
+
+  These buckets are pure replication targets: private, versioned, no
+  website hosting, no CloudFront/OAC/WAF - nothing serves them
+  directly. If the primary region becomes unavailable, promote one of
+  these buckets manually (e.g. front it with a new CloudFront
+  distribution) as part of your DR runbook; this template doesn't
+  automate failover itself.
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: >
+      Must match the BucketName parameter used for the primary
+      s3-static-website.yaml stack - the destination bucket names are
+      derived from it (<BucketName>-replica and
+      <BucketName>-images-replica), so replication can only be wired
+      up correctly if this matches.
+    AllowedPattern: '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'
+    ConstraintDescription: >
+      Must be a valid S3 bucket name: lowercase letters, numbers, dots,
+      and hyphens only, 3-63 characters.
+
+Resources:
+
+  WebsiteReplicaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketName}-replica'
+      # Same ACL/OwnershipControls reasoning as the primary template's
+      # CloudFrontBucket - see the comment there.
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      # Required: S3 Cross-Region Replication requires versioning on
+      # both the source and destination bucket.
+      VersioningConfiguration:
+        Status: Enabled
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+
+  ImagesReplicaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketName}-images-replica'
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      VersioningConfiguration:
+        Status: Enabled
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+
+Outputs:
+  WebsiteReplicaBucketArn:
+    Description: >
+      ARN of the website bucket's DR replica. Pass this as the primary
+      stack's WebsiteReplicaBucketArn parameter.
+    Value: !GetAtt WebsiteReplicaBucket.Arn
+
+  WebsiteReplicaBucketName:
+    Description: Name of the website bucket's DR replica
+    Value: !Ref WebsiteReplicaBucket
+
+  ImagesReplicaBucketArn:
+    Description: >
+      ARN of the images bucket's DR replica. Pass this as the primary
+      stack's ImagesReplicaBucketArn parameter.
+    Value: !GetAtt ImagesReplicaBucket.Arn
+
+  ImagesReplicaBucketName:
+    Description: Name of the images bucket's DR replica
+    Value: !Ref ImagesReplicaBucket

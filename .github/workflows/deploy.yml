@@ -38,6 +38,10 @@ jobs:
           # even though a fresh create works fine without it. See the
           # comment on CloudFrontBucket's AccessControl property.
           cfn-lint s3-static-website.yaml --ignore-checks W3045
+          # s3-static-website-dr.yaml deploys to a secondary region and
+          # has no bucket needing the same W3045 suppression, but lint
+          # it too so it doesn't silently drift out of sync.
+          cfn-lint s3-static-website-dr.yaml
 
       - name: Preview S3 sync (dry run)
         run: |
