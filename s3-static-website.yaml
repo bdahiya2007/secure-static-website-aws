@@ -101,12 +101,62 @@ Parameters:
       Only applies when AcmCertificateArn is set — the default
       certificate always uses CloudFront's own minimum.
 
+  EnableCrossRegionReplication:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >
+      Whether to replicate both buckets to destination buckets in a
+      secondary AWS region for disaster recovery. CloudFormation stacks
+      deploy to a single region, so the destination buckets can't be
+      created by this template — deploy s3-static-website-dr.yaml to
+      the secondary region first, then redeploy this stack with this
+      set to 'true' and WebsiteReplicaBucketArn/ImagesReplicaBucketArn
+      set to that stack's outputs. Both source buckets have versioning
+      (required for replication) and a 90-day noncurrent-version
+      expiration rule on unconditionally, independent of this setting
+      — see the comment on CloudFrontBucket's VersioningConfiguration.
+
+  WebsiteReplicaBucketArn:
+    Type: String
+    Default: ''
+    Description: >
+      ARN of the destination bucket for the website bucket's
+      replication (the WebsiteReplicaBucketArn output of
+      s3-static-website-dr.yaml). Required when
+      EnableCrossRegionReplication is 'true'.
+
+  ImagesReplicaBucketArn:
+    Type: String
+    Default: ''
+    Description: >
+      ARN of the destination bucket for the images bucket's
+      replication (the ImagesReplicaBucketArn output of
+      s3-static-website-dr.yaml). Required when
+      EnableCrossRegionReplication is 'true'.
+
 Conditions:
   ShouldCreateGitHubDeployRole: !And
     - !Not [!Equals [!Ref GitHubOrg, '']]
     - !Not [!Equals [!Ref GitHubRepo, '']]
   ShouldCreateOIDCProvider: !Equals [!Ref CreateGitHubOIDCProvider, 'true']
   HasCustomDomain: !Not [!Equals [!Ref AcmCertificateArn, '']]
+  ShouldEnableReplication: !Equals [!Ref EnableCrossRegionReplication, 'true']
+
+Rules:
+  ReplicationRequiresDestinationArns:
+    RuleCondition: !Equals [!Ref EnableCrossRegionReplication, 'true']
+    Assertions:
+      - Assert: !Not [!Equals [!Ref WebsiteReplicaBucketArn, '']]
+        AssertDescription: >-
+          WebsiteReplicaBucketArn must be set (to the
+          s3-static-website-dr.yaml stack's WebsiteReplicaBucketArn
+          output) when EnableCrossRegionReplication is 'true'
+      - Assert: !Not [!Equals [!Ref ImagesReplicaBucketArn, '']]
+        AssertDescription: >-
+          ImagesReplicaBucketArn must be set (to the
+          s3-static-website-dr.yaml stack's ImagesReplicaBucketArn
+          output) when EnableCrossRegionReplication is 'true'
 
 Resources:
 
@@ -142,6 +192,46 @@ Resources:
       # this only accelerates writes to the bucket.
       AccelerateConfiguration:
         AccelerationStatus: Enabled
+      # Versioning is required for Cross-Region Replication and is left
+      # on unconditionally (not gated by EnableCrossRegionReplication),
+      # since turning it off later doesn't delete the versions already
+      # created - there's no reason to churn it on/off with the
+      # replication flag. Every "aws s3 sync --delete" deploy leaves the
+      # previous version of any changed/removed key as a noncurrent
+      # version, so this pairs with the noncurrent-version expiration
+      # rule below to keep that from growing unbounded.
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireNoncurrentVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 90
+      # Replicates every object (including whichever storage class it's
+      # currently in) to WebsiteReplicaBucketArn in a secondary region
+      # for disaster recovery, when enabled. Note this only covers the
+      # storage class an object has AT THE TIME it's replicated - S3
+      # doesn't replicate storage-class changes made later by a
+      # bucket's own lifecycle rules, so the replica bucket needs its
+      # own matching lifecycle rules if you want replicas to keep
+      # ageing into cheaper storage classes over time too. This bucket
+      # has no such rule (see LifecycleConfiguration above - only
+      # noncurrent-version cleanup), so it doesn't apply here, but does
+      # for ImagesBucket below.
+      ReplicationConfiguration: !If
+        - ShouldEnableReplication
+        - Role: !GetAtt WebsiteReplicationRole.Arn
+          Rules:
+            - Id: ReplicateToSecondaryRegion
+              Status: Enabled
+              Priority: 1
+              Filter: {}
+              DeleteMarkerReplication:
+                Status: Enabled
+              Destination:
+                Bucket: !Ref WebsiteReplicaBucketArn
+        - !Ref 'AWS::NoValue'
       # Enables the AWS/S3 per-request metrics (AllRequests, GetRequests,
       # etc.) for the whole bucket, published under FilterId "EntireBucket".
       # These aren't published to CloudWatch by default and carry their own
@@ -179,6 +269,12 @@ Resources:
       # same rationale, so uploading product images benefits too.
       AccelerateConfiguration:
         AccelerationStatus: Enabled
+      # See the comment on CloudFrontBucket's VersioningConfiguration —
+      # same reasoning (required for replication, left on
+      # unconditionally, paired with noncurrent-version expiration
+      # below).
+      VersioningConfiguration:
+        Status: Enabled
       # Product images are read far more often right after upload than
       # months later, so ageing them into cheaper storage classes cuts
       # cost. No rule applies to the website bucket — that content is
@@ -213,6 +309,36 @@ Resources:
                 TransitionInDays: 60
               - StorageClass: GLACIER
                 TransitionInDays: 180
+          - Id: ExpireNoncurrentVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 90
+      # Replicates every object (including whichever storage class it's
+      # currently in) to ImagesReplicaBucketArn in a secondary region
+      # for disaster recovery, when enabled. As with CloudFrontBucket,
+      # this only carries over the storage class an object has AT
+      # REPLICATION TIME (normally STANDARD, right after upload) — the
+      # STANDARD_IA/GLACIER transitions this bucket's own lifecycle
+      # rule makes later are not themselves replicated, so replicas
+      # stay in whichever class they were replicated in rather than
+      # ageing independently. That also means replicas don't inherit
+      # the GLACIER read-availability tradeoff documented above; if you
+      # want replicas to also age into cheaper storage, add a matching
+      # lifecycle rule directly on ImagesReplicaBucket in
+      # s3-static-website-dr.yaml.
+      ReplicationConfiguration: !If
+        - ShouldEnableReplication
+        - Role: !GetAtt ImagesReplicationRole.Arn
+          Rules:
+            - Id: ReplicateToSecondaryRegion
+              Status: Enabled
+              Priority: 1
+              Filter: {}
+              DeleteMarkerReplication:
+                Status: Enabled
+              Destination:
+                Bucket: !Ref ImagesReplicaBucketArn
+        - !Ref 'AWS::NoValue'
       MetricsConfigurations:
         - Id: EntireBucket
     DeletionPolicy: Retain
@@ -278,6 +404,102 @@ Resources:
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
+
+  # IAM role S3 assumes to replicate objects from CloudFrontBucket to
+  # WebsiteReplicaBucketArn in the secondary region. Scoped to only
+  # this bucket pair, separate from ImagesReplicationRole below, so a
+  # compromised role can't touch the other bucket's replication - same
+  # per-resource isolation principle as giving each CloudFront origin
+  # its own OAC.
+  #
+  # The source bucket ARN below is built with !Sub from the BucketName
+  # parameter rather than !GetAtt CloudFrontBucket.Arn - CloudFrontBucket
+  # already depends on this role (via ReplicationConfiguration.Role), so
+  # a GetAtt back the other way creates a circular dependency between
+  # the two resources. Building the ARN from the parameter instead
+  # gives the exact same string without an edge back to the bucket
+  # resource.
+  WebsiteReplicationRole:
+    Type: AWS::IAM::Role
+    Condition: ShouldEnableReplication
+    Properties:
+      RoleName: !Sub
+        - '${SanitizedName}-website-replication'
+        - SanitizedName: !Join ['-', !Split ['.', !Ref BucketName]]
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ReplicateWebsiteBucketToSecondaryRegion
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadReplicationSourceConfig
+                Effect: Allow
+                Action:
+                  - s3:GetReplicationConfiguration
+                  - s3:ListBucket
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${BucketName}'
+              - Sid: ReadSourceObjectVersions
+                Effect: Allow
+                Action:
+                  - s3:GetObjectVersionForReplication
+                  - s3:GetObjectVersionAcl
+                  - s3:GetObjectVersionTagging
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${BucketName}/*'
+              - Sid: ReplicateToDestination
+                Effect: Allow
+                Action:
+                  - s3:ReplicateObject
+                  - s3:ReplicateDelete
+                  - s3:ReplicateTags
+                Resource: !Sub '${WebsiteReplicaBucketArn}/*'
+
+  # Same pattern as WebsiteReplicationRole, scoped to ImagesBucket /
+  # ImagesReplicaBucketArn only.
+  ImagesReplicationRole:
+    Type: AWS::IAM::Role
+    Condition: ShouldEnableReplication
+    Properties:
+      RoleName: !Sub
+        - '${SanitizedName}-images-replication'
+        - SanitizedName: !Join ['-', !Split ['.', !Ref BucketName]]
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ReplicateImagesBucketToSecondaryRegion
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadReplicationSourceConfig
+                Effect: Allow
+                Action:
+                  - s3:GetReplicationConfiguration
+                  - s3:ListBucket
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${BucketName}-images'
+              - Sid: ReadSourceObjectVersions
+                Effect: Allow
+                Action:
+                  - s3:GetObjectVersionForReplication
+                  - s3:GetObjectVersionAcl
+                  - s3:GetObjectVersionTagging
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${BucketName}-images/*'
+              - Sid: ReplicateToDestination
+                Effect: Allow
+                Action:
+                  - s3:ReplicateObject
+                  - s3:ReplicateDelete
+                  - s3:ReplicateTags
+                Resource: !Sub '${ImagesReplicaBucketArn}/*'
 
   # AWS WAF web ACL using the AWS managed SQL injection rule set.
   # Scope: CLOUDFRONT web ACLs are global but must be created in the
@@ -595,3 +817,13 @@ Outputs:
       ARN of the IAM role GitHub Actions assumes via OIDC to deploy the
       site. Set this as the AWS_ROLE_ARN repository variable in GitHub.
     Value: !GetAtt GitHubActionsDeployRole.Arn
+
+  WebsiteReplicationRoleArn:
+    Condition: ShouldEnableReplication
+    Description: ARN of the IAM role used to replicate the website bucket
+    Value: !GetAtt WebsiteReplicationRole.Arn
+
+  ImagesReplicationRoleArn:
+    Condition: ShouldEnableReplication
+    Description: ARN of the IAM role used to replicate the images bucket
+    Value: !GetAtt ImagesReplicationRole.Arn

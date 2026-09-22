@@ -37,7 +37,17 @@ jobs:
           # bucket once OwnershipControls: BucketOwnerEnforced is set,
           # even though a fresh create works fine without it. See the
           # comment on CloudFrontBucket's AccessControl property.
-          cfn-lint s3-static-website.yaml --ignore-checks W3045
+          #
+          # W1031 (Fn::Sub doesn't match the ARN pattern) is also
+          # suppressed: WebsiteReplicaBucketArn/ImagesReplicaBucketArn
+          # default to '' so the template stays deployable with
+          # replication off, and cfn-lint statically checks that empty
+          # default against the ARN regex rather than a real deploy-time
+          # value. The Rules: section's assertions already enforce that
+          # these are set to real ARNs whenever EnableCrossRegionReplication
+          # is 'true'.
+          cfn-lint s3-static-website.yaml --ignore-checks W3045,W1031
+          cfn-lint s3-static-website-dr.yaml
 
       - name: Preview S3 sync (dry run)
         run: |
