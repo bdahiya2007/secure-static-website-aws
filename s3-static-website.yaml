@@ -411,6 +411,14 @@ Resources:
   # compromised role can't touch the other bucket's replication - same
   # per-resource isolation principle as giving each CloudFront origin
   # its own OAC.
+  #
+  # The source bucket ARN below is built with !Sub from the BucketName
+  # parameter rather than !GetAtt CloudFrontBucket.Arn - CloudFrontBucket
+  # already depends on this role (via ReplicationConfiguration.Role), so
+  # a GetAtt back the other way creates a circular dependency between
+  # the two resources. Building the ARN from the parameter instead
+  # gives the exact same string without an edge back to the bucket
+  # resource.
   WebsiteReplicationRole:
     Type: AWS::IAM::Role
     Condition: ShouldEnableReplication
@@ -435,14 +443,14 @@ Resources:
                 Action:
                   - s3:GetReplicationConfiguration
                   - s3:ListBucket
-                Resource: !GetAtt CloudFrontBucket.Arn
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${BucketName}'
               - Sid: ReadSourceObjectVersions
                 Effect: Allow
                 Action:
                   - s3:GetObjectVersionForReplication
                   - s3:GetObjectVersionAcl
                   - s3:GetObjectVersionTagging
-                Resource: !Sub '${CloudFrontBucket.Arn}/*'
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${BucketName}/*'
               - Sid: ReplicateToDestination
                 Effect: Allow
                 Action:
@@ -477,14 +485,14 @@ Resources:
                 Action:
                   - s3:GetReplicationConfiguration
                   - s3:ListBucket
-                Resource: !GetAtt ImagesBucket.Arn
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${BucketName}-images'
               - Sid: ReadSourceObjectVersions
                 Effect: Allow
                 Action:
                   - s3:GetObjectVersionForReplication
                   - s3:GetObjectVersionAcl
                   - s3:GetObjectVersionTagging
-                Resource: !Sub '${ImagesBucket.Arn}/*'
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${BucketName}-images/*'
               - Sid: ReplicateToDestination
                 Effect: Allow
                 Action:
