@@ -487,3 +487,10 @@ body {
         right: -100vw;
     }
 }
+
+.no-products {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: #666;
+    padding: 40px;
+}

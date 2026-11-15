@@ -518,7 +518,7 @@ Resources:
         - '${SanitizedName}-waf'
         - SanitizedName: !Join ['-', !Split ['.', !Ref BucketName]]
       Scope: CLOUDFRONT
-      Description: !Sub 'Web ACL for ${BucketName} CloudFront distribution - managed SQLi and common rule sets'
+      Description: !Sub 'Web ACL for ${BucketName} CloudFront distribution - managed SQLi and common rule sets plus per-IP rate limit'
       DefaultAction:
         Allow: {}
       VisibilityConfig:
@@ -550,6 +550,21 @@ Resources:
             SampledRequestsEnabled: true
             CloudWatchMetricsEnabled: true
             MetricName: !Sub '${BucketName}-common-rule-set'
+        # Blocks any single IP sending more than 1000 requests in a
+        # 5-minute window (about 60 full page loads) until its rate drops.
+        # Cheap protection against scraping and request floods.
+        - Name: RateLimitPerIP
+          Priority: 2
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              Limit: 1000
+              AggregateKeyType: IP
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub '${BucketName}-rate-limit'
 
   # Security headers CloudFront adds to every response. The CSP locks
   # scripts, styles and everything else to same-origin (plus data: images)
