@@ -128,6 +128,39 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // One delegated listener replaces the inline onclick handlers so the
+    // page works under a CSP without 'unsafe-inline'. It runs before the
+    // outside-click handler below, like the old target-phase handlers did.
+    document.addEventListener('click', function(e) {
+        const el = e.target.closest('[data-action]');
+        if (!el) return;
+
+        switch (el.dataset.action) {
+            case 'search':
+                searchProducts();
+                break;
+            case 'toggle-cart':
+                toggleCart();
+                break;
+            case 'checkout':
+                checkout();
+                break;
+            case 'filter':
+                e.preventDefault();
+                filterProducts(el.dataset.category);
+                break;
+            case 'add-to-cart':
+                addToCart(Number(el.dataset.id));
+                break;
+            case 'update-quantity':
+                updateQuantity(Number(el.dataset.id), Number(el.dataset.change));
+                break;
+            case 'remove-item':
+                removeFromCart(Number(el.dataset.id));
+                break;
+        }
+    });
+
     // Close cart when clicking outside
     document.addEventListener('click', function(e) {
         const cartSidebar = document.getElementById('cartSidebar');
@@ -151,7 +184,7 @@ function displayProducts(productsToShow) {
     const productsGrid = document.getElementById('productsGrid');
     
     if (productsToShow.length === 0) {
-        productsGrid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #666; padding: 40px;">No products found matching your search.</p>';
+        productsGrid.innerHTML = '<p class="no-products">No products found matching your search.</p>';
         return;
     }
     
@@ -166,7 +199,7 @@ function displayProducts(productsToShow) {
                 <span class="rating-count">(${product.reviews})</span>
             </div>
             <div class="product-price">$${product.price.toFixed(2)}</div>
-            <button class="add-to-cart" onclick="addToCart(${product.id})">Add to Cart</button>
+            <button class="add-to-cart" data-action="add-to-cart" data-id="${product.id}">Add to Cart</button>
         </div>
     `).join('');
 }
@@ -324,10 +357,10 @@ function updateCartDisplay() {
                 <div class="cart-item-title">${item.title}</div>
                 <div class="cart-item-price">$${item.price.toFixed(2)}</div>
                 <div class="quantity-controls">
-                    <button class="quantity-btn" onclick="updateQuantity(${item.id}, -1)">-</button>
+                    <button class="quantity-btn" data-action="update-quantity" data-id="${item.id}" data-change="-1">-</button>
                     <span>${item.quantity}</span>
-                    <button class="quantity-btn" onclick="updateQuantity(${item.id}, 1)">+</button>
-                    <button class="remove-item" onclick="removeFromCart(${item.id})">Remove</button>
+                    <button class="quantity-btn" data-action="update-quantity" data-id="${item.id}" data-change="1">+</button>
+                    <button class="remove-item" data-action="remove-item" data-id="${item.id}">Remove</button>
                 </div>
             </div>
         </div>
