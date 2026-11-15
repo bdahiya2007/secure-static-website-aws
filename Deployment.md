@@ -84,8 +84,12 @@ This creates:
   images — also with all public access blocked, and its own OAC.
 - A CloudFront **Origin Access Control (OAC)** for each bucket.
 - An AWS **WAF web ACL** (`Scope: CLOUDFRONT`) with the AWS managed
-  `AWSManagedRulesSQLiRuleSet` rule group, actively blocking (not just
-  logging) requests that look like SQL injection attempts.
+  `AWSManagedRulesSQLiRuleSet` and `AWSManagedRulesCommonRuleSet` rule
+  groups, actively blocking (not just logging) requests that look like
+  SQL injection or other common exploits.
+- A CloudFront **response headers policy** adding HSTS, nosniff,
+  frame-deny, referrer, permissions and Content-Security-Policy headers
+  to every response.
 - A **CloudFront distribution** with two origins — the website bucket
   (default behavior) and the images bucket (routed via a `/images/*`
   cache behavior) — both reached over the S3 REST (regional) endpoint via
@@ -441,14 +445,14 @@ aws cloudformation wait stack-delete-complete --stack-name my-static-site --regi
   the second transition's `StorageClass` from `GLACIER` to `GLACIER_IR`
   (Glacier Instant Retrieval) in `s3-static-website.yaml` — similar
   cost, but no restore step.
-- **WAF protection**: the attached web ACL currently runs only the AWS
-  managed `AWSManagedRulesSQLiRuleSet` rule group in blocking mode. If you
+- **WAF protection**: the attached web ACL runs the AWS managed
+  `AWSManagedRulesSQLiRuleSet` and `AWSManagedRulesCommonRuleSet` rule
+  groups in blocking mode. If you
   see false positives (legitimate requests being blocked), you can switch
   a rule's `OverrideAction` to `Count: {}` in the template temporarily to
-  observe without blocking, then re-enable blocking once tuned. Consider
-  adding other AWS managed rule groups (e.g. `AWSManagedRulesCommonRuleSet`
-  for broader baseline protection) as additional `Rules` entries with
-  increasing `Priority` values.
+  observe without blocking, then re-enable blocking once tuned. Further
+  managed groups (e.g. `AWSManagedRulesKnownBadInputsRuleSet`) can be
+  added as extra `Rules` entries with increasing `Priority` values.
 - **CI/CD**: [.github/workflows/deploy.yml](.github/workflows/deploy.yml)
   automates the sync + invalidation steps above on every push to `main`.
   It authenticates via GitHub OIDC (no long-lived AWS keys stored in
