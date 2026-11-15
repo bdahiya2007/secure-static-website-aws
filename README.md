@@ -49,7 +49,8 @@ flowchart LR
 | Lifecycle rules on the images bucket only | Product images transition to Standard-IA at 60 days and Glacier at 180 days, cutting storage cost as they age — deliberately not applied to the website bucket (too small, changes too often to be worth it) or overridden below S3's 128 KB minimum transition size (would cost more than it saves at this bucket's current image sizes). Glacier means an image past 180 days can briefly fail to load until restored, a deliberate cost-over-availability tradeoff — see `Deployment.md` for the `GLACIER_IR` alternative |
 | Cross-Region Replication is optional and lives in a second template | Destination buckets for DR must live in a different region than this stack (pinned to `us-east-1` for the CLOUDFRONT-scoped WAF), and CloudFormation can't create resources outside its own stack's region — `s3-static-website-dr.yaml` creates them separately, and the primary stack only turns on replication once given their ARNs. Versioning and a 90-day noncurrent-version expiration rule are on unconditionally on both source buckets either way, since every `--delete` deploy leaves old versions behind |
 | CloudFront Origin Access Control (OAC), one per origin | Each bucket policy trusts only this specific distribution's signed (SigV4) requests, not "any CloudFront distribution" and not the public internet; a compromised OAC on one origin doesn't grant access to the other |
-| AWS WAF (CLOUDFRONT scope), managed SQLi rule set | Blocks — not just logs — requests matching AWS-managed SQL injection signatures, at the edge, before they reach the origin |
+| AWS WAF (CLOUDFRONT scope), managed SQLi and common rule sets | Blocks — not just logs — requests matching AWS-managed SQL injection and common exploit signatures, at the edge, before they reach the origin |
+| CloudFront response headers policy | Adds HSTS, `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` and a same-origin Content-Security-Policy to every response. The CSP allows `'unsafe-inline'` for scripts and styles because the site uses inline `onclick` handlers and style attributes |
 | HTTPS-only viewer policy | HTTP requests are redirected to HTTPS; no cleartext viewer traffic |
 | GitHub OIDC instead of IAM access keys, one role per job | Short-lived tokens matched against GitHub's OIDC `sub` claim — no long-lived AWS credentials stored in GitHub, nothing to leak or rotate. Pull requests get a read-only role; only the `production` environment (main branch only) can assume the write role |
 | Least-privilege deploy role | The IAM policy grants only `s3:{List,Get,Put,Delete}Object` on this one bucket and `cloudfront:CreateInvalidation` on this one distribution |
@@ -80,7 +81,7 @@ This repo intentionally includes two different implementations of "serve a stati
 | Bucket access | Private; all public access blocked | Public read (`s3:GetObject` for everyone) |
 | CDN | CloudFront with OAC | None — direct S3 website endpoint |
 | TLS | Enforced (HTTP → HTTPS redirect) | Not available (S3 website endpoints are HTTP-only) |
-| WAF | Yes — SQLi managed rule set | No |
+| WAF | Yes — SQLi and common managed rule sets | No |
 | CI/CD | GitHub Actions with OIDC | Manual `terraform apply` |
 | Use case | Production-facing, security-conscious deployment | Fastest way to get static files served from S3 |
 

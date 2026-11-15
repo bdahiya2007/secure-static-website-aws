@@ -504,7 +504,7 @@ Resources:
                   - s3:ReplicateTags
                 Resource: !Sub '${ImagesReplicaBucketArn}/*'
 
-  # AWS WAF web ACL using the AWS managed SQL injection rule set.
+  # AWS WAF web ACL using the AWS managed SQL injection and common rule sets.
   # Scope: CLOUDFRONT web ACLs are global but must be created in the
   # us-east-1 region — this stack must be deployed there.
   #
@@ -518,7 +518,7 @@ Resources:
         - '${SanitizedName}-waf'
         - SanitizedName: !Join ['-', !Split ['.', !Ref BucketName]]
       Scope: CLOUDFRONT
-      Description: !Sub 'Web ACL for ${BucketName} CloudFront distribution - SQL injection protection'
+      Description: !Sub 'Web ACL for ${BucketName} CloudFront distribution - managed SQLi and common rule sets'
       DefaultAction:
         Allow: {}
       VisibilityConfig:
@@ -538,6 +538,53 @@ Resources:
             SampledRequestsEnabled: true
             CloudWatchMetricsEnabled: true
             MetricName: !Sub '${BucketName}-sqli-rule-set'
+        - Name: AWS-AWSManagedRulesCommonRuleSet
+          Priority: 1
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub '${BucketName}-common-rule-set'
+
+  # Security headers CloudFront adds to every response. The CSP allows
+  # 'unsafe-inline' for scripts and styles because the site relies on
+  # inline onclick handlers and style attributes; everything else is
+  # locked to same-origin (plus data: images), and framing is denied.
+  SecurityHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub
+          - '${SanitizedName}-security-headers'
+          - SanitizedName: !Join ['-', !Split ['.', !Ref BucketName]]
+        Comment: Security headers for the static website
+        SecurityHeadersConfig:
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: false
+            Preload: false
+            Override: true
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
+          ReferrerPolicy:
+            ReferrerPolicy: strict-origin-when-cross-origin
+            Override: true
+          ContentSecurityPolicy:
+            ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+            Override: true
+        CustomHeadersConfig:
+          Items:
+            - Header: Permissions-Policy
+              Value: camera=(), microphone=(), geolocation=(), payment=()
+              Override: true
 
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
@@ -585,6 +632,7 @@ Resources:
             - HEAD
           Compress: true
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # AWS Managed-CachingOptimized
+          ResponseHeadersPolicyId: !Ref SecurityHeadersPolicy
         # Routes any request under /images/* to the dedicated images
         # bucket instead of the website bucket.
         CacheBehaviors:
@@ -599,6 +647,7 @@ Resources:
               - HEAD
             Compress: true
             CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # AWS Managed-CachingOptimized
+            ResponseHeadersPolicyId: !Ref SecurityHeadersPolicy
         CustomErrorResponses:
           - ErrorCode: 403
             ResponseCode: 404
