@@ -51,7 +51,7 @@ flowchart LR
 | CloudFront Origin Access Control (OAC), one per origin | Each bucket policy trusts only this specific distribution's signed (SigV4) requests, not "any CloudFront distribution" and not the public internet; a compromised OAC on one origin doesn't grant access to the other |
 | AWS WAF (CLOUDFRONT scope), managed SQLi rule set | Blocks — not just logs — requests matching AWS-managed SQL injection signatures, at the edge, before they reach the origin |
 | HTTPS-only viewer policy | HTTP requests are redirected to HTTPS; no cleartext viewer traffic |
-| GitHub OIDC instead of IAM access keys | The deploy role is assumed via a short-lived token scoped to this exact repository (matched against GitHub's OIDC `sub` claim) — no long-lived AWS credentials stored in GitHub, nothing to leak or rotate |
+| GitHub OIDC instead of IAM access keys, one role per job | Short-lived tokens matched against GitHub's OIDC `sub` claim — no long-lived AWS credentials stored in GitHub, nothing to leak or rotate. Pull requests get a read-only role; only the `production` environment (main branch only) can assume the write role |
 | Least-privilege deploy role | The IAM policy grants only `s3:{List,Get,Put,Delete}Object` on this one bucket and `cloudfront:CreateInvalidation` on this one distribution |
 | Branch protection on `main` | Every change goes through a PR with a required, automated validation check; direct pushes and force-pushes are blocked |
 | Custom domain is optional, not hardcoded | `Aliases`/`ViewerCertificate` are driven by parameters (`AlternateDomainNames`, `AcmCertificateArn`), gated by a condition — deploying without them still works, falling back to the default `*.cloudfront.net` certificate |
@@ -91,7 +91,12 @@ This repo intentionally includes two different implementations of "serve a stati
 - **`validate`** — on every pull request targeting `main`. Lints the CloudFormation template with `cfn-lint` and previews the S3 sync with `--dryrun`; no AWS resources are changed. This is a required status check, so a PR cannot merge until it passes.
 - **`deploy`** — on push to `main` (i.e. after a PR merges). Syncs `s3-static-website/` to the website bucket, syncs `product-images/` to the images bucket, and creates a CloudFront invalidation.
 
-Both jobs authenticate via GitHub's OIDC provider, assuming an IAM role whose trust policy is scoped to this exact repository — matched against GitHub's `sub` claim, including the immutable owner/repo IDs GitHub embeds in it. No `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` secrets exist anywhere in this repo.
+Both jobs authenticate via GitHub's OIDC provider, but each assumes its **own** IAM role, matched against GitHub's `sub` claim:
+
+- `validate` assumes a **read-only** role (`s3:ListBucket` on the two buckets, nothing else) that trusts only this repo's `pull_request` runs. A pull request runs its own copy of the workflow, so whatever a PR's workflow does, it cannot change the live site.
+- `deploy` runs in the `production` GitHub environment, which only the `main` branch may use, and assumes the write role, which trusts only that environment. Pull requests, other branches and other repositories cannot assume it.
+
+No `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` secrets exist anywhere in this repo, and every Action is pinned to a full commit SHA.
 
 ## Deploying this yourself
 
