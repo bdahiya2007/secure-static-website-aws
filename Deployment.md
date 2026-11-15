@@ -86,7 +86,8 @@ This creates:
 - An AWS **WAF web ACL** (`Scope: CLOUDFRONT`) with the AWS managed
   `AWSManagedRulesSQLiRuleSet` and `AWSManagedRulesCommonRuleSet` rule
   groups, actively blocking (not just logging) requests that look like
-  SQL injection or other common exploits.
+  SQL injection or other common exploits, plus a rate-based rule that
+  blocks any IP sending more than 1000 requests in 5 minutes.
 - A CloudFront **response headers policy** adding HSTS, nosniff,
   frame-deny, referrer, permissions and Content-Security-Policy headers
   to every response.
@@ -447,7 +448,9 @@ aws cloudformation wait stack-delete-complete --stack-name my-static-site --regi
   cost, but no restore step.
 - **WAF protection**: the attached web ACL runs the AWS managed
   `AWSManagedRulesSQLiRuleSet` and `AWSManagedRulesCommonRuleSet` rule
-  groups in blocking mode. If you
+  groups in blocking mode, and a `RateLimitPerIP` rate-based rule
+  (1000 requests per 5 minutes per IP). Shared IPs (offices, mobile
+  carriers) can hit the limit together; raise `Limit` if that happens. If you
   see false positives (legitimate requests being blocked), you can switch
   a rule's `OverrideAction` to `Count: {}` in the template temporarily to
   observe without blocking, then re-enable blocking once tuned. Further
