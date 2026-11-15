@@ -458,9 +458,15 @@ aws cloudformation wait stack-delete-complete --stack-name my-static-site --regi
      `CreateGitHubOIDCProvider=false` if your AWS account already has a
      `token.actions.githubusercontent.com` OIDC provider from another
      stack).
-  2. In the GitHub repo's Settings → Secrets and variables → Actions →
+  2. In the GitHub repo's Settings → Environments, create an environment
+     named `production` (or whatever `GitHubEnvironment` is set to) and,
+     under Deployment branches and tags, allow only `main`. The deploy
+     role trusts only jobs running in this environment.
+  3. In the GitHub repo's Settings → Secrets and variables → Actions →
      Variables, add:
      - `AWS_ROLE_ARN` — the `GitHubActionsDeployRoleArn` stack output
+     - `AWS_VALIDATE_ROLE_ARN` — the `GitHubActionsValidateRoleArn` stack
+       output (read-only role used by the pull request `validate` job)
      - `S3_BUCKET_NAME` — the website bucket name
      - `IMAGES_BUCKET_NAME` — the `ImagesBucketName` stack output
      - `CLOUDFRONT_DISTRIBUTION_ID` — the `CloudFrontDistributionId` output
