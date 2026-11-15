@@ -121,3 +121,8 @@ aws s3 sync ./product-images s3://<your-bucket-name>-images/
 ## Tech stack
 
 AWS CloudFormation · Amazon S3 (Cross-Region Replication, lifecycle rules, Transfer Acceleration) · Amazon CloudFront (OAC) · AWS WAFv2 · AWS IAM (OIDC federation) · Amazon CloudWatch · Amazon Route53 (DNS, managed separately from this stack) · Terraform (alternate path) · GitHub Actions
+
+## License
+
+All rights reserved. This repository is a portfolio project, published for viewing. No license is granted to copy, modify or redistribute
+the code. You are welcome to read it and to fork it on GitHub.
