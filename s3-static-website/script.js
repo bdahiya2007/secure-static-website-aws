@@ -166,7 +166,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const cartSidebar = document.getElementById('cartSidebar');
         const cartButton = document.querySelector('.cart');
 
-        if (!cartSidebar.contains(e.target) && !cartButton.contains(e.target) && cartSidebar.classList.contains('open')) {
+        // composedPath() is captured when the click is dispatched, so it still
+        // includes the sidebar after a +/-/Remove click re-renders the cart
+        // and detaches the clicked button (where contains() would say "outside").
+        const path = e.composedPath();
+
+        if (!path.includes(cartSidebar) && !path.includes(cartButton) && cartSidebar.classList.contains('open')) {
             toggleCart();
         }
     });
